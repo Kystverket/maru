@@ -1,0 +1,11 @@
+.databricks/
+build/
+dist/
+__pycache__/
+*.egg-info
+.venv/
+scratch/README.md
+!scratch/README.md
+
+# add *job.yaml
+*job.yaml
