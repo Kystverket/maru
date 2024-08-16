@@ -73,4 +73,4 @@ The MarU project is designed to calculate emissions from vessels based on variou
 
 ## Data Flow
 
-![Data flow](data_flow_detailed.png)
+![Data flow](data_flow_notebooks_detailed.png)

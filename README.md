@@ -24,7 +24,7 @@ For detailed data flow, see [notebooks](docs/notebooks.md)
 | AIS Data | Data from the Automatic Identifaction System (AIS). |
 | Areas | Geographic areas. Used to enrich AIS data and calculate emissions within the areas. |
 | Vessel | Ship register combined from several sources (IHS Markit, ShipInfo, SafeSeaNet, NOR and NIS flag registers) enriched with specific logic, such as fuel type and size groups. |
-| Emission Factors | Input of various factors for emissions. |
+| Emission Variables | Input of various factors for emissions. |
 
 
 ## Abbrevations and logic
