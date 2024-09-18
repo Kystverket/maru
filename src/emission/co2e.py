@@ -21,9 +21,9 @@ def calculate_co2e(df: DataFrame, var: dict) -> DataFrame:
     """
 
     df = df.withColumn(
-        "co2e_ton",
-        df["co2_ton"] * var["co2e_gwp100_co2"]
-        + df["ch4_ton"] * var["co2e_gwp100_ch4"]
-        + df["n2o_ton"] * var["co2e_gwp100_n2o"],
+        "co2e_tonnes",
+        df["co2_tonnes"] * var["co2e_gwp100_co2"]
+        + df["ch4_tonnes"] * var["co2e_gwp100_ch4"]
+        + df["n2o_tonnes"] * var["co2e_gwp100_n2o"],
     )
     return df

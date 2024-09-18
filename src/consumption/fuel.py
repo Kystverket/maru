@@ -17,36 +17,27 @@ def calculate_fuel_consumption(df: DataFrame, engines: list) -> DataFrame:
 
     Returns:
     pyspark.sql.dataframe.DataFrame
-        The output DataFrame with new columns: `{engine}_fuel_ton`, ie. main_engine_fuel_ton.
+        The output DataFrame with new columns: `{engine}_fuel_tonnes`, ie. main_engine_fuel_tonnes.
     """
 
     for engine in engines:
         df = df.withColumn(
-            f"{engine}_fuel_ton",
+            f"{engine}_fuel_tonnes",
             df[f"sfc_{engine}"]
             * df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])
             / 1_000_000,
         )
 
-    # Set electric shore power at berth:
-    df = df.withColumn(
-        "electric_shore_power_at_berth",
-        when(
-            (df["close_to_power"])
-            & (df["phase"] == "n")
-            & (df["sail_time_remaining_seconds"] > 3600 * 2),
-            True,
-        ).otherwise(False),
-    )
-
     # Set aux and boiler fuel to zero when electric shore power at berth:
     df = df.withColumn(
-        "aux_fuel_ton",
-        when((df["electric_shore_power_at_berth"]), 0).otherwise(df["aux_fuel_ton"]),
+        "aux_fuel_tonnes",
+        when((df["electric_shore_power_at_berth"]), 0).otherwise(df["aux_fuel_tonnes"]),
     ).withColumn(
-        "boiler_fuel_ton",
-        when((df["electric_shore_power_at_berth"]), 0).otherwise(df["boiler_fuel_ton"]),
+        "boiler_fuel_tonnes",
+        when((df["electric_shore_power_at_berth"]), 0).otherwise(
+            df["boiler_fuel_tonnes"]
+        ),
     )
 
     return df
@@ -74,29 +65,29 @@ def calculate_fuel_equivalent(df: DataFrame, var: dict, engines: list) -> DataFr
     """
     for engine in engines:
         df = df.withColumn(
-            f"{engine}_fuel_mdo_equivalent_ton",
+            f"{engine}_fuel_mdo_equivalent_tonnes",
             when(
                 df["main_engine_fueltype"] == "Residual Fuel",
-                var["fuel_equivalent_hfo"] * df[f"{engine}_fuel_ton"],
+                var["fuel_equivalent_hfo"] * df[f"{engine}_fuel_tonnes"],
             )
             .when(
                 df["main_engine_fueltype"] == "Distillate Fuel",
-                var["fuel_equivalent_mdo"] * df[f"{engine}_fuel_ton"],
+                var["fuel_equivalent_mdo"] * df[f"{engine}_fuel_tonnes"],
             )
             .when(
                 df["main_engine_fueltype"] == "LNG",
-                var["fuel_equivalent_lng"] * df[f"{engine}_fuel_ton"],
+                var["fuel_equivalent_lng"] * df[f"{engine}_fuel_tonnes"],
             )
             .when(
                 df["main_engine_fueltype"] == "Methanol",
-                var["fuel_equivalent_methanol"] * df[f"{engine}_fuel_ton"],
+                var["fuel_equivalent_methanol"] * df[f"{engine}_fuel_tonnes"],
             ),
         )
 
     df = df.withColumn(
-        "fuel_mdo_equivalent_ton",
+        "fuel_mdo_equivalent_tonnes",
         sum(
-            coalesce(df[f"{engine}_fuel_mdo_equivalent_ton"], lit(0))
+            coalesce(df[f"{engine}_fuel_mdo_equivalent_tonnes"], lit(0))
             for engine in engines
         ),
     )

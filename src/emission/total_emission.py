@@ -24,14 +24,15 @@ def total_emission(df: DataFrame, engines: list, emissions: list) -> DataFrame:
     """
 
     for emission in emissions:
-        columns_to_sum = [f"{emission}_{engine}_ton" for engine in engines]
+        columns_to_sum = [f"{emission}_{engine}_tonnes" for engine in engines]
         df = df.withColumn(
-            f"{emission}_ton", sum(coalesce(df[col], lit(0)) for col in columns_to_sum)
+            f"{emission}_tonnes",
+            sum(coalesce(df[col], lit(0)) for col in columns_to_sum),
         )
 
     df = df.withColumn(
-        "fuel_ton",
-        sum(coalesce(df[f"{engine}_fuel_ton"], lit(0)) for engine in engines),
+        "fuel_tonnes",
+        sum(coalesce(df[f"{engine}_fuel_tonnes"], lit(0)) for engine in engines),
     )
 
     return df

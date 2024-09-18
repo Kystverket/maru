@@ -2,8 +2,10 @@
 import os
 import sys
 
-sys.path.append("/Workspace/")
+sys.path.append(os.path.abspath("../../../"))
+ENV: str = os.getenv("ENVIRONMENT")
 # COMMAND ----------
+
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
 from utilities.transformers.common import add_processing_timestamp
@@ -14,8 +16,6 @@ from utilities.transformers.common import add_processing_timestamp
 
 # COMMAND ----------
 
-
-ENV: str = os.getenv("ENVIRONMENT")
 CATALOG_DESTINATION = f"silver_{ENV}"
 SCHEMA_DESTINATION = "maru"
 TABLE_NAME_VESSEL_AUX_BOILER_KW_BRONZE = f"bronze_{ENV}.maru.vessel_aux_boiler_kw"
@@ -28,8 +28,11 @@ UNKNOWN_UNIT_VALUE_LOW_LIMIT = -99
 UNKNOWN_UNIT_VALUE_HIGH_LIMIT = 0
 
 # COMMAND ----------
+
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG_DESTINATION}.{SCHEMA_DESTINATION}")
+
 # COMMAND ----------
+
 # MAGIC %md #Read data
 
 # COMMAND ----------
@@ -113,6 +116,7 @@ df = df[columns].union(df_unknown_unit[columns])
 df = df.sort(F.col("vessel_type"), F.col("size_bin")).drop("low_limit_max")
 
 # COMMAND ----------
+
 # Add metadata
 df = add_processing_timestamp(df)
 

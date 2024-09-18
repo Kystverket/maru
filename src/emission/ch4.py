@@ -100,7 +100,7 @@ def calculate_ch4(df: DataFrame, engines: list) -> DataFrame:
     respective factors, i.e. 'ch4_main_engine_factor_kwh', 'ch4_aux_factor_kwh', 'ch4_boiler_factor_kwh', and the
     energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
     respectively. The calculation is based on the formula CH4_emission = factor * kWh_consumption / 1000.
-    (g / kwh => divide by 1 000 000 to get ton)
+    (g / kwh => divide by 1 000 000 to get tonnes)
 
     Parameters:
     -----------
@@ -113,11 +113,11 @@ def calculate_ch4(df: DataFrame, engines: list) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        A PySpark DataFrame object with the CH4 emission values in ton.
+        A PySpark DataFrame object with the CH4 emission values in tonnes.
     """
     for engine in engines:
         df = df.withColumn(
-            f"ch4_{engine}_ton",
+            f"ch4_{engine}_tonnes",
             df[f"ch4_{engine}_factor"]
             * df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])

@@ -2,18 +2,23 @@
 import os
 import sys
 
-sys.path.append("/Workspace/")
+SP_ID: str = os.getenv("SP_ID")
+ENV: str = os.getenv("ENVIRONMENT")
+
+sys.path.append(f"/Workspace/{SP_ID}/bundle_{ENV}/ais-flows/files/notebooks/")
+
 # COMMAND ----------
 
 import dlt
 from utilities.transformers.bronze import add_bi_metadata_columns
 
 # COMMAND ----------
-ENV: str = os.getenv("ENVIRONMENT")
+
 RAW_FILE_PATH = (
     f"abfss://raw@kyvdatalakehouse{ENV}.dfs.core.windows.net/maru/vessel/vessel_type"
 )
 TABLE_NAME = "vessel_type"
+
 # COMMAND ----------
 
 SCHEMA = """

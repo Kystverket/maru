@@ -926,6 +926,10 @@ def update_main_engine_kw_with_speed_correction_factor(df: DataFrame) -> DataFra
     """
     Applies a power correction factor to the 'main_engine_kw' column based on the vessel type.
 
+    For some ship types (large container ships and cruise ships) the speed given in the ship registers (e.g. S&P Markit)
+    correspond to lower engine loading than maximum continuous rating (MCR). The model therefore overpredict power output.
+    A power correction factor of 0.70 is used for Cruise.
+
     Parameters:
     -----------
     df : pyspark.sql.DataFrame

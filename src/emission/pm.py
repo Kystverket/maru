@@ -93,7 +93,7 @@ def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataF
 
 def calculate_pm_10(df, engines):
     """
-    Calculates PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less) emissions in `ton` for each engine type in the given DataFrame.
+    Calculates PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less) emissions in `tonnes` for each engine type in the given DataFrame.
 
     Parameters:
     -----------
@@ -104,8 +104,8 @@ def calculate_pm_10(df, engines):
 
     Returns:
     --------
-    A PySpark DataFrame with additional columns representing the PM10 emission (in ton) for each engine type,
-             as follows: pm10_main_engine_ton, pm10_aux_ton, pm10_boiler_ton: The PM10 emission in ton for the main engine, auxiliary engine, and boiler, respectively, based on the PM factor and power output for each engine type.
+    A PySpark DataFrame with additional columns representing the PM10 emission (in tonnes) for each engine type,
+             as follows: pm10_main_engine_tonnes, pm10_aux_tonnes, pm10_boiler_tonnes: The PM10 emission in tonnes for the main engine, auxiliary engine, and boiler, respectively, based on the PM factor and power output for each engine type.
     """
     for engine in engines:
         pm_calculation = (
@@ -116,7 +116,7 @@ def calculate_pm_10(df, engines):
         )
 
         df = df.withColumn(
-            f"pm10_{engine}_ton",
+            f"pm10_{engine}_tonnes",
             when(
                 df["eca"],
                 df[f"pm_{engine}_factor_eca"] * pm_calculation,
@@ -128,7 +128,7 @@ def calculate_pm_10(df, engines):
 
 def calculate_pm_2_5(df: DataFrame, var: dict) -> DataFrame:
     """
-    Calculate PM 2.5 (Particle pollution from fine particulates, 2.5 micrometers or less) in ton based on PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less)
+    Calculate PM 2.5 (Particle pollution from fine particulates, 2.5 micrometers or less) in tonnes based on PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less)
 
     Parameters:
     -----------
@@ -139,9 +139,9 @@ def calculate_pm_2_5(df: DataFrame, var: dict) -> DataFrame:
 
     Returns:
     --------
-    A PySpark DataFrame with additional columns representing the PM2.5 emission (in ton) for each engine type
+    A PySpark DataFrame with additional columns representing the PM2.5 emission (in tonnes) for each engine type
     """
 
-    df = df.withColumn("pm2_5_ton", df["pm10_main_engine_ton"] * var["pm_2_5"])
+    df = df.withColumn("pm2_5_tonnes", df["pm10_main_engine_tonnes"] * var["pm_2_5"])
 
     return df

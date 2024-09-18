@@ -211,29 +211,33 @@ def calculate_bc_main_engine(df: DataFrame) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        Spark DataFrame with a new column 'bc_main_engine_ton' containing the black carbon mass emissions in tonnes.
+        Spark DataFrame with a new column 'bc_main_engine_tonnes' containing the black carbon mass emissions in tonnes.
     """
 
     # Reduce kwh with degree of electrification and convert gram to ton:
-    bc_lng_calculation = (
+    bc_kwh_calculation = (
         df["main_engine_kwh"] * (1 - df["degree_of_electrification"]) / 1_000_000
     )
 
     # Calculate column:
     df = df.withColumn(
-        "bc_main_engine_ton",
+        "bc_main_engine_tonnes",
         when(
             df["eca"],
             when(
-                df["main_engine_fueltype"] == "LNG",
-                df["bc_main_engine_factor_eca"] * bc_lng_calculation,
-            ).otherwise(df["bc_main_engine_factor_eca"] * df["main_engine_fuel_ton"]),
+                (df["main_engine_fueltype"] == "LNG")
+                | (df["main_engine_enginetype"].isin("ST", "GT")),
+                df["bc_main_engine_factor_eca"] * bc_kwh_calculation,
+            ).otherwise(
+                df["bc_main_engine_factor_eca"] * df["main_engine_fuel_tonnes"]
+            ),
         ).otherwise(
             when(
-                df["main_engine_fueltype"] == "LNG",
-                df["bc_main_engine_factor_global"] * bc_lng_calculation,
+                (df["main_engine_fueltype"] == "LNG")
+                | (df["main_engine_enginetype"].isin("ST", "GT")),
+                df["bc_main_engine_factor_global"] * bc_kwh_calculation,
             ).otherwise(
-                df["bc_main_engine_factor_global"] * df["main_engine_fuel_ton"]
+                df["bc_main_engine_factor_global"] * df["main_engine_fuel_tonnes"]
             ),
         ),
     )
@@ -256,11 +260,11 @@ def calculate_bc_aux_boiler(df: DataFrame, engines: list) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        Spark DataFrame with a new column 'bc_aux' containing the black carbon mass emissions in ton
+        Spark DataFrame with a new column 'bc_aux' containing the black carbon mass emissions in tonnes
     """
 
     for engine in engines:
-        # Reduce kwh with degree of electrification and convert gram to ton:
+        # Reduce kwh with degree of electrification and convert gram to tonnes:
         bc_calculation = (
             df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])
@@ -270,7 +274,7 @@ def calculate_bc_aux_boiler(df: DataFrame, engines: list) -> DataFrame:
 
         # Calculate column:
         df = df.withColumn(
-            f"bc_{engine}_ton",
+            f"bc_{engine}_tonnes",
             when(
                 df["eca"],
                 df[f"bc_{engine}_factor_eca"] * bc_calculation,

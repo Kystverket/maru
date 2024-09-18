@@ -2,9 +2,10 @@
 import os
 import sys
 
-sys.path.append("/Workspace/")
-# for debug
-# sys.path.append("/Workspace/Repos/jorgen.kittelsen@bouvet.no/kyv-data-flows-databricks/notebooks/")
+SP_ID: str = os.getenv("SP_ID")
+ENV: str = os.getenv("ENVIRONMENT")
+
+sys.path.append(f"/Workspace/{SP_ID}/bundle_{ENV}/ais-flows/files/notebooks/")
 
 # COMMAND ----------
 
@@ -21,12 +22,11 @@ from utilities.transformers.bronze import add_bi_metadata_columns
 
 # COMMAND ----------
 
-# COMMAND ----------
-ENV: str = os.getenv("ENVIRONMENT")
 RAW_FILE_PATH = (
     f"abfss://raw@kyvdatalakehouse{ENV}.dfs.core.windows.net/maru/vessel/vessel_battery"
 )
 BATTERY_ELECTRIC_TABLE_NAME = "vessel_battery"
+
 # COMMAND ----------
 
 SCHEMA = """

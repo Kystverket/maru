@@ -170,11 +170,11 @@ def set_co_aux_boiler_factor(df: DataFrame, var: dict) -> DataFrame:
 
 def calculate_co(df: DataFrame, engines: list) -> DataFrame:
     """
-    Calculates the `co` (Carbon Monoxide)  emission in `ton` for each engine type 'main_engine', 'aux', 'boiler', based on their
+    Calculates the `co` (Carbon Monoxide)  emission in `tonnes` for each engine type 'main_engine', 'aux', 'boiler', based on their
     respective factors, i.e. 'co_main_engine_factor_kwh', 'co_aux_factor_kwh', 'co_boiler_factor_kwh', and the
     energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
     respectively. The calculation is based on the formula co_emission = factor * kWh_consumption / 1 000 000.
-    (g / kwh => divide by 1 000 000 to get ton)
+    (g / kwh => divide by 1 000 000 to get tonnes)
 
     Parameters:
     -----------
@@ -187,7 +187,7 @@ def calculate_co(df: DataFrame, engines: list) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        A PySpark DataFrame object with the co emission values in ton.
+        A PySpark DataFrame object with the co emission values in tonnes.
     """
     for engine in engines:
         co_calulation = (
@@ -198,7 +198,7 @@ def calculate_co(df: DataFrame, engines: list) -> DataFrame:
         )
 
         df = df.withColumn(
-            f"co_{engine}_ton",
+            f"co_{engine}_tonnes",
             when(
                 df["eca"],
                 df[f"co_{engine}_factor_eca"] * co_calulation,
