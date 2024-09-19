@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import coalesce, col, lit, row_number, when
+from pyspark.sql.functions import coalesce, col, lit, row_number, when, year
 from pyspark.sql.window import Window
 from utilities.transformers.h3 import (
     H3_HEX_KRING_SHORE_POWER,
@@ -73,10 +73,12 @@ def get_areas():
         },
         {
             "area_name": "municipality",
+            "table_name": "municipality_historical_h3",
             "hex_resolution": H3_RESOLUTION_MUNICIPALITY,
             "select_expression": [
                 "municipality_id as id",
-                "municipality_name as name",
+                "municipality_name_no as name",
+                "year",
                 f"hex_{H3_RESOLUTION_MUNICIPALITY}",
             ],
             "k_ring": False,
@@ -158,26 +160,72 @@ def set_area_distance(df: DataFrame, close_to_power_cell: int) -> DataFrame:
 def join_ais_area(
     ais_df: DataFrame,
     area_df: DataFrame,
-    join_key: str,
+    name: str,
     window_id: str,
     window_orderby_key: str,
     h3_resolution: int,
+    k_rings: int,
 ) -> DataFrame:
     """
-    Join AIS data with area data on a specified join key and window partitoning.
+    Join AIS data with area data based on H3 hexagonal grid coordinates and optional k-rings.
+
+    This function performs a left join operation between an AIS DataFrame and an area DataFrame. The join is based on
+    H3 hexagonal grid coordinates, with support for k-rings if specified. Additionally, it applies a window function
+    to partition and order the data, ensuring that only the first row per partition is kept after the join.
+
+    Parameters
+    ----------
+    ais_df : DataFrame
+        The AIS DataFrame containing vessel locations and other relevant information.
+    area_df : DataFrame
+        The area DataFrame containing area information, including H3 hexagonal grid coordinates.
+    name : str
+        The name of the area, used to construct the join key and identify the correct H3 column in `area_df`.
+    window_id : str
+        The column name(s) used to partition the data for the window function.
+    window_orderby_key : str
+        The column name used to order data within each partition for the window function.
+    h3_resolution : int
+        The resolution of the H3 hexagonal grid used for the join.
+    k_rings : int
+        The number of k-rings to consider for the join. If `k_rings` is greater than 0, the join will use k-ring
+        specific columns. If `k_rings` is 0, a direct H3 hexagonal grid coordinate join is performed.
+
+    Returns
+    -------
+    DataFrame
+        A DataFrame resulting from the left join of `ais_df` and `area_df`, with duplicates removed based on the
+        window specification and only the first row per partition kept. The resulting DataFrame includes AIS data
+        enriched with area information.
     """
     window_spec = Window.partitionBy(window_id).orderBy(window_orderby_key)
+
+    # Set join key based on conditions
+    if k_rings:
+        # Join with H3 k-ring if exist
+        h3_join_column = f"{name}_hex_kring_{h3_resolution}_{k_rings}"
+        join_key = ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]
+    elif name == "municipality":
+        # Municiaplity joined with year and H3 to get correct municipality version
+        h3_join_column = f"{name}_hex_{h3_resolution}"
+        join_key = (ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]) & (
+            year(ais_df["date_time_utc"]) == area_df["municipality_year"]
+        )
+    else:
+        # Join with H3
+        h3_join_column = f"{name}_hex_{h3_resolution}"
+        join_key = ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]
 
     df = (
         ais_df.join(
             area_df,
-            on=(ais_df[f"hex_{h3_resolution}"] == area_df[join_key]),
+            on=join_key,
             how="left",
         )
-        .drop(area_df[join_key])
         .withColumn("row_number", row_number().over(window_spec))
         .filter(col("row_number") == 1)
         .drop("row_number")
+        .drop(h3_join_column)
     )
 
     return df

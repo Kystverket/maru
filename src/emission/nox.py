@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import when
+from pyspark.sql.functions import lit, when
 
 
 def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
@@ -48,6 +48,11 @@ def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
         .when(
             df["main_engine_enginetype"] == "LBSI",
             var["nox_main_engine_lng_lbsi"],
+        )
+        # Electric
+        .when(
+            df["main_engine_fueltype"] == "Electric",
+            lit(0),
         )
         # Tier group 0:
         .when(
@@ -156,6 +161,11 @@ def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
                 df["main_engine_enginetype"] == "LNG-Diesel",
                 var["nox_main_engine_tier_3_lng_diesel"],
             )
+            # Electric
+            .when(
+                df["main_engine_fueltype"] == "Electric",
+                lit(0),
+            )
             .when(
                 (df["main_engine_rpm"] > 0) & (df["main_engine_rpm"] < 130),
                 var["nox_main_engine_tier_3_rpm_1_129"],
@@ -232,7 +242,7 @@ def set_nox_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFr
 
 def calculate_nox(df: DataFrame, engines: list) -> DataFrame:
     """
-    Calculate `NOx` (Nitrogen Oxides) emissions in `ton` for different engine types and boilers.
+    Calculate `NOx` (Nitrogen Oxides) emissions in `tonnes` for different engine types and boilers.
 
     Parameters:
     -----------
@@ -258,7 +268,7 @@ def calculate_nox(df: DataFrame, engines: list) -> DataFrame:
         )
 
         df = df.withColumn(
-            f"nox_{engine}_ton",
+            f"nox_{engine}_tonnes",
             when(
                 df["eca"],
                 df[f"nox_{engine}_factor_eca"] * nox_calculation,

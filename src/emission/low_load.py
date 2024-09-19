@@ -9,7 +9,7 @@ def low_load(df: DataFrame, var: dict) -> DataFrame:
     Parameters:
     -----------
     df: pyspark.sql.DataFrame
-        The PySpark DataFrame containing the different emission columns (pm10_main_engine_ton, nox_main_engine_ton ect.)
+        The PySpark DataFrame containing the different emission columns (pm10_main_engine_tonnes, nox_main_engine_tonnes ect.)
 
     var: dict
         A dictionary containing input variables for different
@@ -18,7 +18,7 @@ def low_load(df: DataFrame, var: dict) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        The updated PySpark DataFrame with low load factors (pm10_main_engine_low_load_factor, nox_main_engine_low_load_factor etc.) and adjusted emission columns (pm10_main_engine_ton, nox_main_engine_ton ect.)
+        The updated PySpark DataFrame with low load factors (pm10_main_engine_low_load_factor, nox_main_engine_low_load_factor etc.) and adjusted emission columns (pm10_main_engine_tonnes, nox_main_engine_tonnes ect.)
     """
 
     emission_low_load_columns = [
@@ -129,8 +129,8 @@ def low_load(df: DataFrame, var: dict) -> DataFrame:
 
         # Apply low load factor to emission
         df = df.withColumn(
-            f"{column_name}_ton",
-            df[f"{column_name}_low_load_factor"] * df[f"{column_name}_ton"],
+            f"{column_name}_tonnes",
+            df[f"{column_name}_low_load_factor"] * df[f"{column_name}_tonnes"],
         )
 
     return df

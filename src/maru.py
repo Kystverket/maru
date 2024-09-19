@@ -2,7 +2,7 @@
 import os
 import sys
 
-sys.path.append("/Workspace/")
+sys.path.append(os.path.abspath(".."))
 
 # COMMAND ----------
 
@@ -13,6 +13,10 @@ import pytz
 
 # pylint: disable=no-name-in-module
 from area.areas import get_areas, join_ais_area, set_area_distance
+from area.electric_shore_power_at_berth import (
+    set_electric_shore_power_at_berth,
+    set_phase_p_when_electric_shore_power_at_berth,
+)
 from consumption.fuel import calculate_fuel_consumption, calculate_fuel_equivalent
 from consumption.kwh import (
     calculate_aux_boiler_kwh,
@@ -67,12 +71,18 @@ from emission.pm import calculate_pm_2_5, calculate_pm_10, set_pm_factor
 from emission.sox import calculate_sox, set_sox_factor
 from emission.total_emission import total_emission
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import broadcast, lit
+from pyspark.sql.functions import broadcast, lit, to_date
+from utilities.job_stats.upsert_job_stats import (
+    create_date_ranges,
+    get_notebook_name,
+    upsert_ais_job_stats,
+)
 from utilities.transformers.common import add_processing_timestamp
 from utilities.transformers.h3 import CLOSE_TO_POWER_CELL
 from utilities.transformers.silver import (
     select_expression_from_table_and_prefix_columns,
 )
+from utils.config import DATE_VARIABLES, VERSION
 from utils.read_data import (
     create_variables_dictionary,
     read_ais_voyages,
@@ -83,11 +93,6 @@ from utils.read_data import (
 # COMMAND ----------
 
 # MAGIC %md #Parameters
-
-# COMMAND ----------
-
-VERSION = "v1.1.0"
-DATE_VARIABLES = "2024-05-01"
 
 # COMMAND ----------
 
@@ -113,6 +118,7 @@ AREA_TABLES = get_areas()
 # COMMAND ----------
 
 norway_timezone = pytz.timezone("Europe/Oslo")
+notebook_name = get_notebook_name()
 
 # COMMAND ----------
 
@@ -274,16 +280,13 @@ df_vessel.cache().count()
 # COMMAND ----------
 
 
-def calculate_consumption(df: DataFrame, engines: list) -> DataFrame:
+def calculate_energy_consumption(df: DataFrame) -> DataFrame:
     """
-    Calculates all emissions.
+    Calculate energy consumption in kWh.
 
     Parameters:
     -----------
     df: A PySpark DataFrame.
-
-    engines: List[str]
-        A list of engine types, ie. me, aux, boiler
 
     Returns:
     --------
@@ -300,6 +303,33 @@ def calculate_consumption(df: DataFrame, engines: list) -> DataFrame:
     # Aux and boiler kWh
     df = calculate_aux_boiler_kwh(df)
 
+    return df
+
+
+# COMMAND ----------
+
+
+def calculate_fuel(df: DataFrame, variables: dict, engines: list) -> DataFrame:
+    """
+    Calculates fuel consumption i tonnes.
+
+    Parameters:
+    -----------
+    df: A PySpark DataFrame.
+
+    variables: dict
+        A dictionary containing input variables for different
+        fuel equivalent factors.
+
+    engines: List[str]
+        A list of engine types, ie. me, aux, boiler
+
+    Returns:
+    --------
+    pyspark.sql.DataFrame
+
+    """
+
     # Spesific fuel consumption
     df = calculate_sfc_load(df)
 
@@ -307,7 +337,7 @@ def calculate_consumption(df: DataFrame, engines: list) -> DataFrame:
     df = calculate_fuel_consumption(df, engines)
 
     # Fuel MDO equivalents
-    df = calculate_fuel_equivalent(df, var, engines)
+    df = calculate_fuel_equivalent(df, variables, engines)
 
     return df
 
@@ -395,21 +425,36 @@ def generate_list_of_periods_to_process(years):
     """Generate a list of periods to process based on a list of years."""
     dates = []
     for year in years:
-        dates.append([f"{year}-01-01", f"{year}-04-01"])
-        dates.append([f"{year}-04-01", f"{year}-07-01"])
-        dates.append([f"{year}-07-01", f"{year}-10-01"])
-        dates.append([f"{year}-10-01", f"{year+1}-01-01"])
+        dates.append([f"{year}-01-01", f"{year}-03-31"])
+        dates.append([f"{year}-04-01", f"{year}-06-30"])
+        dates.append([f"{year}-07-01", f"{year}-09-30"])
+        dates.append([f"{year}-10-01", f"{year}-12-31"])
     return dates
 
 
 # COMMAND ----------
 
-periods = generate_list_of_periods_to_process([])
+# Get dates to process
+df_dates = (
+    spark.table(f"gold_{ENV}.ais.ais_job_stats")
+    .select("date_utc")
+    .where("ais_voyages IS NOT NULL AND maru IS NULL")
+)
+
+dates_list = [row[0] for row in df_dates.collect()]
+
+if not dates_list:
+    dbutils.notebook.exit("No periods to process.")
 
 # COMMAND ----------
 
-if not periods:
-    raise ValueError("No periods to process.")
+periods = create_date_ranges(list_of_dates=dates_list, max_dates_per_range=90)
+print(periods)
+
+# periods = generate_list_of_periods_to_process([])
+
+# if not periods:
+#     raise ValueError("No periods to process.")
 
 # COMMAND ----------
 
@@ -432,20 +477,16 @@ for list_of_dates in periods:
 
     # Join Area datasets:
     for area in AREA_TABLES:
+        # Get configs:
         area_name = area.get("area_name")
-        area_upper = area_name.upper()
+        table = area.get("table_name", area_name)
         k_ring = area.get("k_ring")
         h3 = area.get("hex_resolution")
         h3_krings = area.get("hex_krings") if k_ring else None
-        join_key_ais_area = (
-            f"{area_name}_hex_kring_{h3}_{h3_krings}"
-            if k_ring
-            else f"{area_name}_hex_{h3}"
-        )
 
         # Read area data:
         df_area = select_expression_from_table_and_prefix_columns(
-            table_name=f"gold_{ENV}.area.{area_name}",
+            table_name=f"gold_{ENV}.area.{table}",
             select_expr=area.get("select_expression"),
             column_prefix=area_name,
         )
@@ -454,21 +495,33 @@ for list_of_dates in periods:
         df_merged = join_ais_area(
             ais_df=df_merged,
             area_df=df_area,
-            join_key=join_key_ais_area,
+            name=area_name,
             window_id=area.get("window_id"),
             window_orderby_key=area.get("window_orderby_key"),
             h3_resolution=h3,
+            k_rings=h3_krings,
         )
 
-    # Set area definitions
+    df_merged = df_merged.drop("municipality_year")
+
+    # Set area distance
     df_merged_area_distance = set_area_distance(df_merged, CLOSE_TO_POWER_CELL)
 
-    # Calculate consumption kWh and fuel
-    df_consumption = calculate_consumption(df_merged_area_distance, ENGINES)
+    # Calculate kwh consumption
+    df_kwh_consumption = calculate_energy_consumption(df_merged_area_distance)
+
+    # Set electric shore power at berth
+    df_electric_shore_power = set_electric_shore_power_at_berth(df_kwh_consumption)
+    df_shore_power_phase = set_phase_p_when_electric_shore_power_at_berth(
+        df_electric_shore_power
+    )
+
+    # Calculate fuel consumption
+    df_fuel_consumption = calculate_fuel(df_shore_power_phase, var, ENGINES)
 
     # Calculate emissions
     df_emission = calculate_emission(
-        df_consumption, var, ENGINES, ENGINES_AUX_BOILER, AREAS
+        df_fuel_consumption, var, ENGINES, ENGINES_AUX_BOILER, AREAS
     )
 
     # Set low load
@@ -494,4 +547,17 @@ for list_of_dates in periods:
     minutes = int(total_time // 60)
     seconds = int(total_time % 60)
     print(f"Total time: {minutes} minutes and {seconds} seconds")
+
+    # Write AIS job statistics:
+    df_dates_written = df_final.select(
+        to_date("date_time_utc").alias("date_utc"), "bi_processing_time"
+    ).dropDuplicates(subset=["date_utc"])
+
+    upsert_ais_job_stats(
+        dataframe_updates=df_dates_written,
+        target_col_notebook=notebook_name,
+        updates_col_timestamp="bi_processing_time",
+    )
+
+
 print("Finished.")

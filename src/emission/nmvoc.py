@@ -139,11 +139,11 @@ def set_nmvoc_boiler_factor(df: DataFrame, var: dict) -> DataFrame:
 
 def calculate_nmvoc(df: DataFrame, engines: list) -> DataFrame:
     """
-    Calculates the `nmvoc` (Non-methane volatile organic compounds) emission in ton for each engine type 'main_engine', 'aux', 'boiler', based on their
+    Calculates the `nmvoc` (Non-methane volatile organic compounds) emission in tonnes for each engine type 'main_engine', 'aux', 'boiler', based on their
     respective factors, i.e. 'nmvoc_main_engine_factor_kwh', 'nmvoc_aux_factor_kwh', 'nmvoc_boiler_factor_kwh', and the
     energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
     respectively. The calculation is based on the formula nmvoc_emission = factor * kWh_consumption / 1 000 000.
-    (g / kwh => divide by 1 000 000 to get ton)
+    (g / kwh => divide by 1 000 000 to get tonnes)
 
     Parameters:
     -----------
@@ -156,11 +156,11 @@ def calculate_nmvoc(df: DataFrame, engines: list) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        A PySpark DataFrame object with the nmvoc emission values in ton.
+        A PySpark DataFrame object with the nmvoc emission values in tonnes.
     """
     for engine in engines:
         df = df.withColumn(
-            f"nmvoc_{engine}_ton",
+            f"nmvoc_{engine}_tonnes",
             df[f"nmvoc_{engine}_factor"]
             * df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])

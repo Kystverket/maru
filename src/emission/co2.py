@@ -44,12 +44,12 @@ def set_cf(df: DataFrame, var: dict) -> DataFrame:
 
 def calculate_co2(df: DataFrame, engines: list) -> DataFrame:
     """
-    Calculates the `co2` (Carbon Dioxide) emissions in `ton` for a given dataset.
+    Calculates the `co2` (Carbon Dioxide) emissions in `tonnes` for a given dataset.
 
     Parameters:
     -----------
     df: pyspark.sql.DataFrame
-        The input dataset containing columns `main_engine_fuel_ton`, `aux_fuel_ton`, `boiler_fuel_ton`, `eca`, `cf_global` and `cf_eca`.
+        The input dataset containing columns `main_engine_fuel_tonnes`, `aux_fuel_tonnes`, `boiler_fuel_tonnes`, `eca`, `cf_global` and `cf_eca`.
 
     engines: List[str]
         A list of engine types, ie. main_engine, aux, boiler
@@ -57,13 +57,13 @@ def calculate_co2(df: DataFrame, engines: list) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        The input dataframe with three new columns: `co2_main_engine_ton`, `co2_aux_ton`, and `co2_boiler_ton`.
+        The input dataframe with three new columns: `co2_main_engine_tonnes`, `co2_aux_tonnes`, and `co2_boiler_tonnes`.
     """
     for engine in engines:
         df = df.withColumn(
-            f"co2_{engine}_ton",
-            when(df["eca"], df["cf_eca"] * df[f"{engine}_fuel_ton"]).otherwise(
-                df["cf_global"] * df[f"{engine}_fuel_ton"]
+            f"co2_{engine}_tonnes",
+            when(df["eca"], df["cf_eca"] * df[f"{engine}_fuel_tonnes"]).otherwise(
+                df["cf_global"] * df[f"{engine}_fuel_tonnes"]
             ),
         )
 

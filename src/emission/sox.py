@@ -68,7 +68,7 @@ def calculate_sox(df: DataFrame, engines: list) -> DataFrame:
     df: PySpark DataFrame
         - eca (bool): Inside / outside Emission Control Area
         - sox factors (float): Factors set by function set_sox_factor
-        - main_engine_fuel_ton / aux_fuel_ton / boiler_fuel_ton (float): Fuel consumption in ton
+        - main_engine_fuel_tonnes / aux_fuel_tonnes / boiler_fuel_tonnes (float): Fuel consumption in tonnes
 
     engines: List[str]
         A list of engine types to calculate SOx factor for.
@@ -81,11 +81,13 @@ def calculate_sox(df: DataFrame, engines: list) -> DataFrame:
 
     for engine in engines:
         df = df.withColumn(
-            f"sox_{engine}_ton",
+            f"sox_{engine}_tonnes",
             when(
                 df["eca"],
-                df[f"sox_{engine}_eca_factor"] * df[f"{engine}_fuel_ton"],
-            ).otherwise(df[f"sox_{engine}_global_factor"] * df[f"{engine}_fuel_ton"]),
+                df[f"sox_{engine}_eca_factor"] * df[f"{engine}_fuel_tonnes"],
+            ).otherwise(
+                df[f"sox_{engine}_global_factor"] * df[f"{engine}_fuel_tonnes"]
+            ),
         )
 
     return df

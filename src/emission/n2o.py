@@ -170,11 +170,11 @@ def set_n2o_aux_boiler_factor(df: DataFrame, var: dict) -> DataFrame:
 
 def calculate_n2o(df: DataFrame, engines: list) -> DataFrame:
     """
-    Calculates the `n2o` (Nitrous Oxide) emission in ton for each engine type 'main_engine', 'aux', 'boiler', based on their
+    Calculates the `n2o` (Nitrous Oxide) emission in tonnes for each engine type 'main_engine', 'aux', 'boiler', based on their
     respective factors, i.e. 'n2o_main_engine_factor_kwh', 'n2o_aux_factor_kwh', 'n2o_boiler_factor_kwh', and the
     energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
     respectively. The calculation is based on the formula n2o_emission = factor * kWh_consumption / 1 000 000.
-    (g / kwh => divide by 1 000 000 to get ton)
+    (g / kwh => divide by 1 000 000 to get tonnes)
 
     Parameters:
     -----------
@@ -187,7 +187,7 @@ def calculate_n2o(df: DataFrame, engines: list) -> DataFrame:
     Returns:
     --------
     pyspark.sql.DataFrame
-        A PySpark DataFrame object with the n2o emission values in ton.
+        A PySpark DataFrame object with the n2o emission values in tonnes.
     """
 
     for engine in engines:
@@ -199,7 +199,7 @@ def calculate_n2o(df: DataFrame, engines: list) -> DataFrame:
         )
 
         df = df.withColumn(
-            f"n2o_{engine}_ton",
+            f"n2o_{engine}_tonnes",
             when(
                 df["eca"],
                 df[f"n2o_{engine}_factor_eca"] * n2o_calulation,

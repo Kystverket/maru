@@ -197,40 +197,37 @@ def calculate_aux_boiler_kwh(df: DataFrame) -> DataFrame:
     df = df.withColumn(
         "aux_kwh",
         when(
-            df["vessel_type_maru"].isin("Liquefied gas tanker", "Oil tanker"),
-            # If in node just use full boiler/aux for the first 2 days
+            (df["phase"] == "n"),
             when(
-                (df["phase"] == "n")
-                & ((df["sail_time_remaining_seconds"] >= 3600 * 24 * 2)),
+                df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker")
+                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
                 df["aux_kwh"] * REDUCE_FACT_TANKER,
-            ).otherwise(df["aux_kwh"]),
-        )
-        .when(
-            # If in node just use full boiler/aux for the first 2 days
-            (df["phase"] == "n") & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
-            df["aux_kwh"] * REDUCE_FACT_OTHER,
-        )
-        .otherwise(df["aux_kwh"]),
+            )
+            .when(
+                (~df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker"))
+                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
+                df["aux_kwh"] * REDUCE_FACT_OTHER,
+            )
+            .otherwise(df["aux_kwh"]),
+        ).otherwise(df["aux_kwh"]),
     )
-
     # Boiler:
     df = df.withColumn(
         "boiler_kwh",
         when(
-            df["vessel_type_maru"].isin("Liquefied gas tanker", "Oil tanker"),
-            # If in node just use full boiler/aux for the first 2 days
+            (df["phase"] == "n"),
             when(
-                (df["phase"] == "n")
-                & ((df["sail_time_remaining_seconds"] >= 3600 * 24 * 3)),
+                df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker")
+                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
                 df["boiler_kwh"] * REDUCE_FACT_TANKER,
-            ).otherwise(df["aux_kwh"]),
-        )
-        .when(
-            # If in node just use full boiler/aux for the first 1 days
-            (df["phase"] == "n") & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
-            df["boiler_kwh"] * REDUCE_FACT_OTHER,
-        )
-        .otherwise(df["boiler_kwh"]),
+            )
+            .when(
+                (~df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker"))
+                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
+                df["boiler_kwh"] * REDUCE_FACT_OTHER,
+            )
+            .otherwise(df["boiler_kwh"]),
+        ).otherwise(df["boiler_kwh"]),
     )
 
     # — when main engine power is between 0 and 150 kW then auxiliary engine and boiler are

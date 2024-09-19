@@ -142,7 +142,7 @@ def read_ais_voyages(
 
     df = (
         spark.read.table(table_name)
-        .filter((col("date_utc") >= ais_from_date) & (col("date_utc") < ais_to_date))
+        .filter((col("date_utc") >= ais_from_date) & (col("date_utc") <= ais_to_date))
         .select(
             "id",
             "vessel_id",
