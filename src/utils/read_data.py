@@ -110,6 +110,8 @@ def read_vessel_data_silver(table_name: str) -> DataFrame:
         "boiler_anchor_kw",
         "boiler_maneuver_kw",
         "boiler_cruise_kw",
+        "start_date",
+        "end_date",
     ]
 
     df = df.select(columns)

@@ -26,19 +26,9 @@ def calculate_fuel_consumption(df: DataFrame, engines: list) -> DataFrame:
             df[f"sfc_{engine}"]
             * df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])
+            * df["electric_shore_power_at_berth_reduction_factor"]
             / 1_000_000,
         )
-
-    # Set aux and boiler fuel to zero when electric shore power at berth:
-    df = df.withColumn(
-        "aux_fuel_tonnes",
-        when((df["electric_shore_power_at_berth"]), 0).otherwise(df["aux_fuel_tonnes"]),
-    ).withColumn(
-        "boiler_fuel_tonnes",
-        when((df["electric_shore_power_at_berth"]), 0).otherwise(
-            df["boiler_fuel_tonnes"]
-        ),
-    )
 
     return df
 

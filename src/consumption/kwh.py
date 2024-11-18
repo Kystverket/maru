@@ -31,9 +31,12 @@ def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
 
     """
 
+    # The load factor represents the estimated engine load as a percentage (0-100%).
+    # It is calculated using the ship's current speed (from AIS data) and its registered service speed from ship registers.
+    # As according to IMO4, the speed ratio exponent is assumed to be 3.
     df = df.withColumn(
         "main_engine_load_factor",
-        ((df["speed_over_ground"] / df["speed_service"]) ** 3) * 0.85,
+        ((df["speed_over_ground"] / df["speed_service"]) ** 3),
     )
 
     # We assume engine load never to exceed 98 %:
@@ -71,7 +74,8 @@ def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
 
 def calculate_main_engine_kwh(df: DataFrame) -> DataFrame:
     """
-    Calculate energy consumption for main engine in kwh
+    Calculate energy consumption for main engine in kwh.
+    To calculate energy consumption for main engine in kwh, we multiply the main engine load factor with the main engine installed power (kw) and the operation time in seconds. According to IMO GHG 4th, the service speed normally is achieved when the main engine run at about 85 % load. Therefore, a factor of 0.85 is multiplied with the installed power.
 
     Parameters
     ----------
@@ -88,6 +92,7 @@ def calculate_main_engine_kwh(df: DataFrame) -> DataFrame:
         "main_engine_kwh",
         df["main_engine_load_factor"]
         * df["main_engine_kw"]
+        * 0.85
         * df["delta_previous_point_seconds"]
         / 3600,
     )

@@ -9,6 +9,7 @@ from utilities.transformers.h3 import (
     H3_RESOLUTION_MUNICIPALITY,
     H3_RESOLUTION_SHORE_POWER,
 )
+from utils.config import MUNICIPALITY_CURRENT_YEAR
 
 
 def get_areas():
@@ -84,12 +85,16 @@ def get_areas():
             "k_ring": False,
             "window_id": ["mmsi", "date_time_utc"],
             "window_orderby_key": "municipality_id",
+            "filter_sql_expression": f"year = {MUNICIPALITY_CURRENT_YEAR}",
         },
         {
             "area_name": "shore_power",
             "hex_resolution": H3_RESOLUTION_SHORE_POWER,
             "hex_krings": H3_HEX_KRING_SHORE_POWER,
             "select_expression": [
+                "bi_row_sha AS id",
+                "year",
+                "usage_percentage",
                 f"hex_kring_{H3_RESOLUTION_SHORE_POWER}_{H3_HEX_KRING_SHORE_POWER}",
                 f"hex_kring_distance_{H3_RESOLUTION_SHORE_POWER}_{H3_HEX_KRING_SHORE_POWER}",
             ],
@@ -201,16 +206,17 @@ def join_ais_area(
     window_spec = Window.partitionBy(window_id).orderBy(window_orderby_key)
 
     # Set join key based on conditions
-    if k_rings:
+
+    if name == "shore_power":
+        # Shore power joined with H3 and greater or equal to year to get only valid installations
+        h3_join_column = f"{name}_hex_kring_{h3_resolution}_{k_rings}"
+        join_key = (ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]) & (
+            year(ais_df["date_time_utc"]) >= area_df["shore_power_year"]
+        )
+    elif k_rings:
         # Join with H3 k-ring if exist
         h3_join_column = f"{name}_hex_kring_{h3_resolution}_{k_rings}"
         join_key = ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]
-    elif name == "municipality":
-        # Municiaplity joined with year and H3 to get correct municipality version
-        h3_join_column = f"{name}_hex_{h3_resolution}"
-        join_key = (ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]) & (
-            year(ais_df["date_time_utc"]) == area_df["municipality_year"]
-        )
     else:
         # Join with H3
         h3_join_column = f"{name}_hex_{h3_resolution}"

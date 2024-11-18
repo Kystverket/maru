@@ -7,4 +7,4 @@ ENV: str = os.getenv("ENVIRONMENT")
 
 # COMMAND ----------
 
-spark.sql(f"OPTIMIZE gold_{ENV}.maru.maru_report")
+spark.sql(f"OPTIMIZE gold_{ENV}.maru.dm_maru_report")

@@ -2,7 +2,16 @@
 import os
 
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import coalesce, col, lit, lower, mode, row_number, when
+from pyspark.sql.functions import (
+    coalesce,
+    col,
+    lit,
+    lower,
+    mode,
+    row_number,
+    to_date,
+    when,
+)
 from pyspark.sql.window import Window
 
 # COMMAND ----------
@@ -16,8 +25,9 @@ ENV: str = os.getenv("ENVIRONMENT")
 FULL_TABLE_NAME_AUX_BOILER_KWH = f"silver_{ENV}.maru.vessel_aux_boiler_kw"
 FULL_TABLE_NAME_FAIRPLAY_MAINENGINE = f"gold_{ENV}.fairplay.tblmainengines"
 FULL_TABLE_NAME_FAIRPLAY_SHIPDATA = f"gold_{ENV}.fairplay.shipdata"
-FULL_TABLE_NAME_MARU_VESSEL = f"gold_{ENV}.maru.vessel"
-FULL_TABLE_NAME_VESSEL_BATTERY = f"silver_{ENV}.maru.vessel_battery"
+FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL = f"gold_{ENV}.maru.dim_vessel_historical"
+FULL_TABLE_NAME_MARU_VESSEL_CURRENT = f"gold_{ENV}.maru.dim_vessel_current"
+FULL_TABLE_NAME_VESSEL_BATTERY = f"gold_{ENV}.maru.vessel_battery"
 FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED = f"gold_{ENV}.shipdata.combined_imputated"
 FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED_IMO_MMSI = (
     f"gold_{ENV}.shipdata.combined_imputated_imo_mmsi"
@@ -28,7 +38,139 @@ VESSEL_UNIT_AUX_BOILER_KW = ["gt", "dwt", "teu", "cbm"]
 
 # COMMAND ----------
 
+# MAGIC %md #Create schema and table
+
+# COMMAND ----------
+
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS gold_{ENV}.maru")
+
+# COMMAND ----------
+
+spark.sql(
+    f"""
+CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL} (
+  vessel_id INT COMMENT 'Identifier for the vessel',
+  start_date DATE COMMENT 'Start date of the entry',
+  end_date DATE COMMENT 'End date of the entry',
+  mmsi ARRAY<STRING> COMMENT 'Maritime Mobile Service Identity array',
+  imo DOUBLE COMMENT 'International Maritime Organization number',
+  call_sign STRING COMMENT 'Vessel call sign',
+  ship_name STRING COMMENT 'Name of the ship',
+  flag_code STRING COMMENT 'Flag country code',
+  vessel_type_imo_ghg STRING COMMENT 'Vessel type according to IMO GHG',
+  vessel_type_maru STRING COMMENT 'Vessel type according to Maru classification',
+  statcode5 STRING COMMENT 'Statcode5 code',
+  year_of_build DOUBLE COMMENT 'Year the vessel was built',
+  gt DOUBLE COMMENT 'Gross tonnage',
+  dwt DOUBLE COMMENT 'Deadweight tonnage',
+  teu DOUBLE COMMENT 'Twenty-foot Equivalent Unit',
+  cbm DOUBLE COMMENT 'Cubic meter',
+  length_overall DOUBLE COMMENT 'Overall length of the vessel',
+  breadth_moulded DOUBLE COMMENT 'Breadth of the vessel moulded',
+  draught DOUBLE COMMENT 'Draught of the vessel',
+  ship_type STRING COMMENT 'Type of the ship',
+  main_engine_rpm DOUBLE COMMENT 'RPM (revolutions per minute) of the main engine',
+  main_engine_kw DOUBLE COMMENT 'KW of the main engine',
+  stroketype DOUBLE COMMENT 'Type of engine stroke',
+  speed_service DOUBLE COMMENT 'Service speed of the vessel',
+  speed_max DOUBLE COMMENT 'Maximum speed of the vessel',
+  power_kw_max DOUBLE COMMENT 'Maximum power in KW',
+  fp_fueltype1code STRING COMMENT 'Primary fuel type code',
+  fp_fueltype2code STRING COMMENT 'Secondary fuel type code',
+  fp_me_enginetype STRING COMMENT 'Main engine type',
+  fp_propulsiontype STRING COMMENT 'Type of propulsion',
+  engine_builder STRING COMMENT 'Engine builder',
+  engine_model STRING COMMENT 'Engine model',
+  degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
+  battery_installation_year INT COMMENT 'Year of battery installation',
+  route STRING COMMENT 'Vessel route',
+  battery_pack_kwh INT COMMENT 'Battery pack capacity in kWh',
+  aux_berth_kw INT COMMENT 'Auxiliary power at berth in kW',
+  aux_anchor_kw INT COMMENT 'Auxiliary power at anchor in kW',
+  aux_maneuver_kw INT COMMENT 'Auxiliary power during maneuvering in kW',
+  aux_cruise_kw INT COMMENT 'Auxiliary power during cruising in kW',
+  boiler_berth_kw INT COMMENT 'Boiler power at berth in kW',
+  boiler_anchor_kw INT COMMENT 'Boiler power at anchor in kW',
+  boiler_maneuver_kw INT COMMENT 'Boiler power during maneuvering in kW',
+  boiler_cruise_kw INT COMMENT 'Boiler power during cruising in kW',
+  length_group STRING COMMENT 'Grouping by length',
+  tier_group INT COMMENT 'Tier group',
+  tier_group_nox INT COMMENT 'NOx tier group',
+  year_group STRING COMMENT 'Grouping by year',
+  gt_group STRING COMMENT 'Grouping by gross tonnage',
+  dwt_group STRING COMMENT 'Grouping by deadweight tonnage',
+  fp_propulsiontypecode STRING COMMENT 'Propulsion type code',
+  main_engine_fueltype STRING COMMENT 'Main engine fuel type',
+  main_engine_fueltype_original STRING COMMENT 'Original main engine fuel type',
+  main_engine_enginetype STRING COMMENT 'Main engine type'
+)
+CLUSTER BY (vessel_id, start_date, end_date)
+COMMENT 'Ship register for the MarU model. This table contains historical data with columns ´start_date´ ´end_date´'
+"""
+)
+
+# COMMAND ----------
+
+spark.sql(
+    f"""
+CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME_MARU_VESSEL_CURRENT} (
+  vessel_id INT COMMENT 'Identifier for the vessel',
+  mmsi ARRAY<STRING> COMMENT 'Maritime Mobile Service Identity array',
+  imo DOUBLE COMMENT 'International Maritime Organization number',
+  call_sign STRING COMMENT 'Vessel call sign',
+  ship_name STRING COMMENT 'Name of the ship',
+  flag_code STRING COMMENT 'Flag country code',
+  vessel_type_imo_ghg STRING COMMENT 'Vessel type according to IMO GHG',
+  vessel_type_maru STRING COMMENT 'Vessel type according to Maru classification',
+  statcode5 STRING COMMENT 'Statcode5 code',
+  year_of_build DOUBLE COMMENT 'Year the vessel was built',
+  gt DOUBLE COMMENT 'Gross tonnage',
+  dwt DOUBLE COMMENT 'Deadweight tonnage',
+  teu DOUBLE COMMENT 'Twenty-foot Equivalent Unit',
+  cbm DOUBLE COMMENT 'Cubic meter',
+  length_overall DOUBLE COMMENT 'Overall length of the vessel',
+  breadth_moulded DOUBLE COMMENT 'Breadth of the vessel moulded',
+  draught DOUBLE COMMENT 'Draught of the vessel',
+  ship_type STRING COMMENT 'Type of the ship',
+  main_engine_rpm DOUBLE COMMENT 'RPM (revolutions per minute) of the main engine',
+  main_engine_kw DOUBLE COMMENT 'KW of the main engine',
+  stroketype DOUBLE COMMENT 'Type of engine stroke',
+  speed_service DOUBLE COMMENT 'Service speed of the vessel',
+  speed_max DOUBLE COMMENT 'Maximum speed of the vessel',
+  power_kw_max DOUBLE COMMENT 'Maximum power in KW',
+  fp_fueltype1code STRING COMMENT 'Primary fuel type code',
+  fp_fueltype2code STRING COMMENT 'Secondary fuel type code',
+  fp_me_enginetype STRING COMMENT 'Main engine type',
+  fp_propulsiontype STRING COMMENT 'Type of propulsion',
+  engine_builder STRING COMMENT 'Engine builder',
+  engine_model STRING COMMENT 'Engine model',
+  degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
+  battery_installation_year INT COMMENT 'Year of battery installation',
+  route STRING COMMENT 'Vessel route',
+  battery_pack_kwh INT COMMENT 'Battery pack capacity in kWh',
+  aux_berth_kw INT COMMENT 'Auxiliary power at berth in kW',
+  aux_anchor_kw INT COMMENT 'Auxiliary power at anchor in kW',
+  aux_maneuver_kw INT COMMENT 'Auxiliary power during maneuvering in kW',
+  aux_cruise_kw INT COMMENT 'Auxiliary power during cruising in kW',
+  boiler_berth_kw INT COMMENT 'Boiler power at berth in kW',
+  boiler_anchor_kw INT COMMENT 'Boiler power at anchor in kW',
+  boiler_maneuver_kw INT COMMENT 'Boiler power during maneuvering in kW',
+  boiler_cruise_kw INT COMMENT 'Boiler power during cruising in kW',
+  length_group STRING COMMENT 'Grouping by length',
+  tier_group INT COMMENT 'Tier group',
+  tier_group_nox INT COMMENT 'NOx tier group',
+  year_group STRING COMMENT 'Grouping by year',
+  gt_group STRING COMMENT 'Grouping by gross tonnage',
+  dwt_group STRING COMMENT 'Grouping by deadweight tonnage',
+  fp_propulsiontypecode STRING COMMENT 'Propulsion type code',
+  main_engine_fueltype STRING COMMENT 'Main engine fuel type',
+  main_engine_fueltype_original STRING COMMENT 'Original main engine fuel type',
+  main_engine_enginetype STRING COMMENT 'Main engine type'
+)
+CLUSTER BY (vessel_id)
+COMMENT 'Ship register for the MarU model. This table contains current data without history'
+"""
+)
 
 # COMMAND ----------
 
@@ -45,21 +187,7 @@ df_shipdata_combined_imo_mmsi = spark.table(
     FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED_IMO_MMSI
 ).where("row_number_mmsi_imo = 1 AND mmsi < 776000000")
 
-df_battery_electric = (
-    spark.table(FULL_TABLE_NAME_VESSEL_BATTERY)
-    .fillna("0", subset="imo")
-    .withColumn("mmsi", col("mmsi").cast("long"))
-    .withColumn("imo", col("imo").cast("long"))
-    .dropDuplicates(subset=["mmsi", "imo"])
-)
-
-df_battery_electric_vessel_id = (
-    df_battery_electric.join(
-        df_shipdata_combined_imo_mmsi, on=["imo", "mmsi"], how="inner"
-    )
-    .select(df_battery_electric["*"], df_shipdata_combined_imo_mmsi["vessel_id"])
-    .dropDuplicates(subset=["vessel_id"])
-)
+df_battery_electric = spark.table(FULL_TABLE_NAME_VESSEL_BATTERY)
 
 df_vessel_type = spark.table(FULL_TABLE_NAME_VESSEL_TYPE)
 
@@ -134,7 +262,7 @@ com_filtered = (
     df_shipdata_combined_imo_mmsi.select("vessel_id").distinct().alias("com_filtered")
 )
 fpl = df_fairplay.alias("fpl")
-ele = df_battery_electric_vessel_id.alias("ele")
+ele = df_battery_electric.alias("ele")
 vty = df_vessel_type.alias("vty")
 
 df_vessel_joined = (
@@ -176,9 +304,8 @@ df_vessel_joined = (
         coalesce(ele.degree_of_electrification, lit(0)).alias(
             "degree_of_electrification"
         ),
-        ele.battery_installation_year,
-        ele.route,
-        ele.battery_pack_kwh,
+        coalesce(ele.start_date, to_date(lit("1900-01-01"))).alias("start_date"),
+        coalesce(ele.end_date, to_date(lit("2999-12-31"))).alias("end_date"),
     )
 )
 
@@ -190,7 +317,7 @@ df_vessel_joined = (
 
 # Merge Vessel dataframe with Aux and boiler kw
 
-unpivot_id_columns = ["vessel_id", "vessel_type_imo_ghg"]
+unpivot_id_columns = ["vessel_id", "vessel_type_imo_ghg", "start_date"]
 unpivot_value_columns = VESSEL_UNIT_AUX_BOILER_KW
 unpivot_dataframe_columns = unpivot_id_columns + unpivot_value_columns
 
@@ -230,7 +357,9 @@ df_vessel_aux_boiler_kwh = (
 
 # COMMAND ----------
 
-df_vessel = df_vessel_joined.join(df_vessel_aux_boiler_kwh, on="vessel_id", how="inner")
+df_vessel = df_vessel_joined.join(
+    df_vessel_aux_boiler_kwh, on=["vessel_id", "start_date"], how="inner"
+)
 
 # COMMAND ----------
 
@@ -851,7 +980,7 @@ def set_dwt_group(df: DataFrame) -> DataFrame:
 
 def update_degree_of_electrification(df: DataFrame) -> DataFrame:
     """
-    Sets degree_of_electrification to 0.95 for vessels with fuel_type = Electric
+    Sets degree_of_electrification to 0.95 for vessels with fuel_type = Electric when degree_of_electrification is not set from vessel_battery table.
 
     Parameters:
     -----------
@@ -867,7 +996,9 @@ def update_degree_of_electrification(df: DataFrame) -> DataFrame:
     df = df.withColumn(
         "degree_of_electrification",
         when(
-            df["main_engine_fueltype"] == "Electric", lit("0.95").cast("float")
+            (df["main_engine_fueltype"] == "Electric")
+            & (df["degree_of_electrification"].isNull()),
+            lit("0.95").cast("double"),
         ).otherwise(df["degree_of_electrification"]),
     )
 
@@ -990,21 +1121,83 @@ def add_enriched_columns(df: DataFrame) -> DataFrame:
 
 # COMMAND ----------
 
-df_vessel_total = add_enriched_columns(df_vessel)
+df_vessel_enriched = add_enriched_columns(df_vessel)
 
 # COMMAND ----------
 
+# MAGIC %md ###Select columns
+
+# COMMAND ----------
+
+df_vessel_selected = df_vessel_enriched.select(
+    "vessel_id",
+    "start_date",
+    "end_date",
+    "mmsi",
+    "imo",
+    "call_sign",
+    "ship_name",
+    "flag_code",
+    "vessel_type_imo_ghg",
+    "vessel_type_maru",
+    "statcode5",
+    "year_of_build",
+    "gt",
+    "dwt",
+    "teu",
+    "cbm",
+    "length_overall",
+    "breadth_moulded",
+    "draught",
+    "ship_type",
+    "main_engine_rpm",
+    "main_engine_kw",
+    "stroketype",
+    "speed_service",
+    "speed_max",
+    "power_kw_max",
+    "fp_fueltype1code",
+    "fp_fueltype2code",
+    "fp_me_enginetype",
+    "fp_propulsiontype",
+    "engine_builder",
+    "engine_model",
+    "degree_of_electrification",
+    "aux_berth_kw",
+    "aux_anchor_kw",
+    "aux_maneuver_kw",
+    "aux_cruise_kw",
+    "boiler_berth_kw",
+    "boiler_anchor_kw",
+    "boiler_maneuver_kw",
+    "boiler_cruise_kw",
+    "length_group",
+    "tier_group",
+    "tier_group_nox",
+    "year_group",
+    "gt_group",
+    "dwt_group",
+    "fp_propulsiontypecode",
+    "main_engine_fueltype",
+    "main_engine_fueltype_original",
+    "main_engine_enginetype",
+).orderBy("vessel_id", "start_date")
+
+# COMMAND ----------
+
+# MAGIC
 # MAGIC %md #QC
 
 # COMMAND ----------
 
 # Check that input and output dataframe of unpivot and join have equal length
 count_expected = (
-    com.join(com_filtered, on="vessel_id", how="inner")
-    .where("vessel_type_imo_ghg is not null")
+    com.where("vessel_type_imo_ghg is not null")
+    .join(com_filtered, on="vessel_id", how="inner")
+    .join(df_battery_electric, on="vessel_id", how="left")
     .count()
 )
-count_actual = df_vessel_total.count()
+count_actual = df_vessel_selected.count()
 assert (
     count_expected == count_actual
 ), f"Expected: {count_expected}, actual: {count_actual}"
@@ -1015,6 +1208,14 @@ assert (
 
 # COMMAND ----------
 
-df_vessel_total.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(
-    name=FULL_TABLE_NAME_MARU_VESSEL
+df_vessel_selected.write.clusterBy("vessel_id", "start_date", "end_date").mode(
+    "overwrite"
+).saveAsTable(name=FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL)
+
+# COMMAND ----------
+
+df_vessel_selected.where("end_date > current_date()").drop(
+    "start_date", "end_date"
+).write.clusterBy("vessel_id").mode("overwrite").saveAsTable(
+    name=FULL_TABLE_NAME_MARU_VESSEL_CURRENT
 )
