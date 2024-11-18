@@ -30,9 +30,9 @@ SELECT
     SUM(sum_bc) AS sum_bc,
     SUM(sum_co2e) AS sum_co2e,
     SUM(distance_kilometers) AS distance_kilometers
-FROM gold_{ENV}.maru.maru_report
+FROM gold_{ENV}.maru.dm_maru_report
 WHERE municipality_voyage_route IS NOT NULL
-  AND version IN ("v1.4.0")
+  AND version IN ("v1.5.0")
   AND in_coast_and_sea_area = true
   AND year_month < date_format(current_date(), "yyyy-MM")
 GROUP BY ALL
