@@ -264,11 +264,11 @@ def calculate_bc_aux_boiler(df: DataFrame, engines: list) -> DataFrame:
     """
 
     for engine in engines:
-        # Reduce kwh with degree of electrification and convert gram to tonnes:
+        # Reduce kwh with degree of electrification and shore power usage. Finally, convert gram to tonnes:
         bc_calculation = (
             df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])
-            * (~df["electric_shore_power_at_berth"]).cast("int")
+            * df["electric_shore_power_at_berth_reduction_factor"]
             / 1_000_000
         )
 
@@ -280,4 +280,5 @@ def calculate_bc_aux_boiler(df: DataFrame, engines: list) -> DataFrame:
                 df[f"bc_{engine}_factor_eca"] * bc_calculation,
             ).otherwise(df[f"bc_{engine}_factor_global"] * bc_calculation),
         )
+
     return df

@@ -30,8 +30,11 @@ SELECT
     SUM(sum_bc) AS sum_bc,
     SUM(sum_co2e) AS sum_co2e,
     SUM(distance_kilometers) AS distance_kilometers
-FROM gold_{ENV}.maru.maru_report
+FROM gold_{ENV}.maru.dm_maru_report
 WHERE municipality_voyage_route IS NOT NULL
+  AND version IN ("v1.5.0")
+  AND in_coast_and_sea_area = true
+  AND year_month < date_format(current_date(), "yyyy-MM")
 GROUP BY ALL
 )
 
@@ -58,17 +61,17 @@ SELECT
   SUM(sum_seconds) AS sum_seconds,
   SUM(sum_kwh) AS sum_kwh,
   SUM(sum_fuel) AS sum_fuel,
-  SUM(sum_co2) AS sum_co2,
-  SUM(sum_nmvoc) AS sum_nmvoc,
-  SUM(sum_co) AS sum_co,
-  SUM(sum_ch4) AS sum_ch4,
-  SUM(sum_n2o) AS sum_n2o,
-  SUM(sum_sox) AS sum_sox,
-  SUM(sum_pm10) AS sum_pm10,
-  SUM(sum_pm2_5) AS sum_pm2_5,
-  SUM(sum_nox) AS sum_nox,
-  SUM(sum_bc) AS sum_bc,
-  SUM(sum_co2e) AS sum_co2e,
+  ROUND(SUM(sum_co2), 4) as sum_co2,
+  ROUND(SUM(sum_nmvoc), 4) as sum_nmvoc,
+  ROUND(SUM(sum_co), 4) as sum_co,
+  ROUND(SUM(sum_ch4), 4) as sum_ch4,
+  ROUND(SUM(sum_n2o), 4) as sum_n2o,
+  ROUND(SUM(sum_sox), 4) as sum_sox,
+  ROUND(SUM(sum_pm10), 4) as sum_pm10,
+  ROUND(SUM(sum_pm2_5), 4) as sum_pm2_5,
+  ROUND(SUM(sum_nox), 4) as sum_nox,
+  ROUND(SUM(sum_bc), 4) as sum_bc,
+  ROUND(SUM(sum_co2e), 4) as sum_co2e,
   SUM(distance_kilometers) AS distance_kilometers
 FROM tmp_sails sails
 INNER JOIN tmp_ranked_routes routes ON sails.municipality_voyage_route = routes.municipality_voyage_route
@@ -84,6 +87,7 @@ CREATE OR REPLACE VIEW gold_{ENV}.maru.v_maru_report AS
 SELECT 
       mmsi,
       vessel_id,
+      year,
       year_month,
       gt_group,
       gt,
@@ -101,28 +105,26 @@ SELECT
       county_id,
       county_name,
       municipality_voyage_type,
-      unlocode_country_code,
-      unlocode_location_code,
       in_coast_and_sea_area,
       in_norwegian_continental_shelf,
       version,
       SUM(sum_seconds) as sum_seconds,
       SUM(sum_kwh) as sum_kwh,
       SUM(sum_fuel) as sum_fuel,
-      SUM(sum_co2) as sum_co2,
-      SUM(sum_nmvoc) as sum_nmvoc,
-      SUM(sum_co) as sum_co,
-      SUM(sum_ch4) as sum_ch4,
-      SUM(sum_n2o) as sum_n2o,
-      SUM(sum_sox) as sum_sox,
-      SUM(sum_pm10) as sum_pm10,
-      SUM(sum_pm2_5) as sum_pm2_5,
-      SUM(sum_nox) as sum_nox,
-      SUM(sum_bc) as sum_bc,
-      SUM(sum_co2e) as sum_co2e,
+      ROUND(SUM(sum_co2), 4) as sum_co2,
+      ROUND(SUM(sum_nmvoc), 4) as sum_nmvoc,
+      ROUND(SUM(sum_co), 4) as sum_co,
+      ROUND(SUM(sum_ch4), 4) as sum_ch4,
+      ROUND(SUM(sum_n2o), 4) as sum_n2o,
+      ROUND(SUM(sum_sox), 4) as sum_sox,
+      ROUND(SUM(sum_pm10), 4) as sum_pm10,
+      ROUND(SUM(sum_pm2_5), 4) as sum_pm2_5,
+      ROUND(SUM(sum_nox), 4) as sum_nox,
+      ROUND(SUM(sum_bc), 4) as sum_bc,
+      ROUND(SUM(sum_co2e), 4) as sum_co2e,
       SUM(distance_kilometers) as distance_kilometers
-FROM gold_{ENV}.maru.maru_report
-WHERE version = "v1.3.0"
+FROM gold_{ENV}.maru.dm_maru_report
+WHERE version IN ("v1.5.0")
     AND in_coast_and_sea_area = true
     AND year_month < date_format(current_date(), "yyyy-MM")
 GROUP BY ALL

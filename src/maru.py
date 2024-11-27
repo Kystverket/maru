@@ -14,6 +14,7 @@ import pytz
 # pylint: disable=no-name-in-module
 from area.areas import get_areas, join_ais_area, set_area_distance
 from area.electric_shore_power_at_berth import (
+    join_ais_vessel_port_electric,
     set_electric_shore_power_at_berth,
     set_phase_p_when_electric_shore_power_at_berth,
 )
@@ -71,7 +72,7 @@ from emission.pm import calculate_pm_2_5, calculate_pm_10, set_pm_factor
 from emission.sox import calculate_sox, set_sox_factor
 from emission.total_emission import total_emission
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import broadcast, lit, to_date
+from pyspark.sql.functions import broadcast, coalesce, col, current_date, lit, to_date
 from utilities.job_stats.upsert_job_stats import (
     create_date_ranges,
     get_notebook_name,
@@ -89,31 +90,7 @@ from utils.read_data import (
     read_feature_values,
     read_vessel_data_silver,
 )
-
-# COMMAND ----------
-
-# MAGIC %md #Parameters
-
-# COMMAND ----------
-
-ENV: str = os.getenv("ENVIRONMENT")
-
-CATALOG_MARU = f"gold_{ENV}"
-SCHEMA_MARU = "maru"
-
-TABLE_NAME_VARIABLES = f"silver_{ENV}.maru.emission_variables"
-TABLE_NAME_VESSEL = f"gold_{ENV}.maru.vessel"
-TABLE_NAME_AIS = f"gold_{ENV}.ais.ais_voyages"
-TABLE_NAME_MARU = "maru_raw"
-
-MARU_FULL_TABLE_NAME = f"{CATALOG_MARU}.{SCHEMA_MARU}.{TABLE_NAME_MARU}"
-
-ENGINES = ["main_engine", "aux", "boiler"]
-ENGINES_AUX_BOILER = ["aux", "boiler"]
-EMISSIONS = ["bc", "ch4", "co", "co2", "n2o", "nmvoc", "nox", "pm10", "sox"]
-AREAS = ["global", "eca"]
-
-AREA_TABLES = get_areas()
+from utils.select_columns import select_maru_output_columns, select_vessel_columns
 
 # COMMAND ----------
 
@@ -122,10 +99,84 @@ notebook_name = get_notebook_name()
 
 # COMMAND ----------
 
+# MAGIC %md #Variables
+
+# COMMAND ----------
+
+ENV: str = os.getenv("ENVIRONMENT")
+
+TABLE_NAME_AIS = f"gold_{ENV}.ais.ais_voyages"
+TABLE_NAME_MARU = f"gold_{ENV}.maru.fact_emission"
+TABLE_NAME_VARIABLES = f"silver_{ENV}.maru.emission_variables"
+TABLE_NAME_VESSEL = f"gold_{ENV}.maru.dim_vessel_historical"
+TABLE_NAME_VESSEL_PORT_ELECTRIC = f"gold_{ENV}.maru.vessel_port_electric"
+TABLE_NAME_VESSEL_TYPE_PORT_ELECTRIC = f"gold_{ENV}.maru.vessel_type_port_electric"
+
+AREAS = ["global", "eca"]
+ENGINES = ["main_engine", "aux", "boiler"]
+ENGINES_AUX_BOILER = ["aux", "boiler"]
+EMISSIONS = ["bc", "ch4", "co", "co2", "n2o", "nmvoc", "nox", "pm10", "sox"]
+
+AREA_TABLES = get_areas()
+
+# COMMAND ----------
+
+# MAGIC %md #Create schema and table
+
+# COMMAND ----------
+
 spark.sql(
     f"""
-          CREATE SCHEMA IF NOT EXISTS {CATALOG_MARU}.{SCHEMA_MARU}
+          CREATE SCHEMA IF NOT EXISTS gold_{ENV}.maru
           """
+)
+
+# COMMAND ----------
+
+spark.sql(
+    f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME_MARU} (
+            id STRING COMMENT 'Unique identifier',
+            date_time_utc TIMESTAMP COMMENT 'Date and time in UTC',
+            mmsi BIGINT COMMENT 'Maritime Mobile Service Identity',
+            vessel_id INT COMMENT 'Identifier for the vessel',
+            phase STRING COMMENT 'Current phase of the vessel',
+            sail_id STRING COMMENT 'Sail identifier',
+            geometry_wkt STRING COMMENT 'Geometry in Well-Known Text format',
+            hex_14 BIGINT COMMENT 'Hexadecimal representation',
+            emission_control_area_id STRING COMMENT 'Emission control area identifier',
+            management_plan_marine_areas_area_id INT COMMENT 'Management plan marine areas area identifier',
+            maritime_borders_norwegian_economic_zone_id STRING COMMENT 'Norwegian economic zone identifier',
+            maritime_borders_norwegian_continental_shelf_id STRING COMMENT 'Norwegian continental shelf identifier',
+            shore_power_id STRING COMMENT 'Shore power identifier',
+            municipality_id STRING COMMENT 'Municipality identifier',
+            in_coast_and_sea_area BOOLEAN COMMENT 'Indicator if in coast and sea area',
+            electric_shore_power_at_berth_reduction_factor DOUBLE COMMENT 'Electric shore power at berth reduction factor',
+            main_engine_load_factor DOUBLE COMMENT 'Main engine load factor',
+            main_engine_kwh DOUBLE COMMENT 'Main engine kWh',
+            aux_kwh DOUBLE COMMENT 'Auxiliary engine kWh',
+            boiler_kwh DOUBLE COMMENT 'Boiler kWh',
+            fuel_tonnes DOUBLE COMMENT 'Fuel in tonnes',
+            fuel_mdo_equivalent_tonnes DOUBLE COMMENT 'Fuel MDO (Marine diesel oil) equivalent in tonnes',
+            bc_tonnes DOUBLE COMMENT 'Black carbon in tonnes',
+            ch4_tonnes DOUBLE COMMENT 'Methane in tonnes',
+            co_tonnes DOUBLE COMMENT 'Carbon monoxide in tonnes',
+            co2_tonnes DOUBLE COMMENT 'Carbon dioxide in tonnes',
+            n2o_tonnes DOUBLE COMMENT 'Nitrous oxide in tonnes',
+            nmvoc_tonnes DOUBLE COMMENT 'Non-methane volatile organic compounds in tonnes',
+            nox_tonnes DOUBLE COMMENT 'Nitrogen oxides in tonnes',
+            pm10_tonnes DOUBLE COMMENT 'Particulate matter (with a diameter of 10 microns or less) in tonnes',
+            pm2_5_tonnes DOUBLE COMMENT 'Particulate matter (with a diameter of 2.5 microns or less) in tonnes',
+            sox_tonnes DOUBLE COMMENT 'Sulfur oxides in tonnes',
+            co2e_tonnes DOUBLE COMMENT 'CO2 equivalent in tonnes',
+            delta_previous_point_seconds BIGINT COMMENT 'Seconds from previous AIS point',
+            distance_previous_point_meters DOUBLE COMMENT 'Distance in meters from previous AIS point',
+            bi_processing_time TIMESTAMP COMMENT 'Last processing time',
+            version STRING COMMENT 'MarU version number'
+        )
+        CLUSTER BY(mmsi, date_time_utc)
+        COMMENT 'MarU raw data'
+"""
 )
 
 # COMMAND ----------
@@ -150,6 +201,19 @@ df_vessel_filtered = df_vessel_in.filter(
     (df_vessel_in["vessel_type_maru"].isNotNull())
     & (df_vessel_in["vessel_type_maru"] != "")
     & (df_vessel_in["vessel_type_maru"] != "Unknown")
+)
+
+# Vessel port electric
+df_vessel_port_electric = spark.table(TABLE_NAME_VESSEL_PORT_ELECTRIC).withColumn(
+    "end_date", coalesce(col("end_date"), current_date()).alias("end_date")
+)
+
+# Vessel type port electric
+df_vessel_type_port_electric = spark.table(
+    TABLE_NAME_VESSEL_TYPE_PORT_ELECTRIC
+).withColumn(
+    "end_date",
+    coalesce(col("end_date"), current_date()).alias("end_date"),
 )
 
 # COMMAND ----------
@@ -205,69 +269,7 @@ df_vessel = set_sox_factor(df_vessel, var, ENGINES, AREAS)
 
 # COMMAND ----------
 
-df_vessel = df_vessel.select(
-    "vessel_id",
-    "vessel_type_maru",
-    # "vessel_type_id",
-    "main_engine_fueltype",
-    "main_engine_enginetype",
-    "year_of_build",
-    "main_engine_rpm",
-    "speed_service",
-    "stroketype",
-    "degree_of_electrification",
-    "main_engine_kw",
-    "aux_berth_kw",
-    "aux_anchor_kw",
-    "aux_maneuver_kw",
-    "aux_cruise_kw",
-    "boiler_berth_kw",
-    "boiler_anchor_kw",
-    "boiler_maneuver_kw",
-    "boiler_cruise_kw",
-    "cf_eca",
-    "cf_global",
-    "sfc_main_engine_baseline",
-    "sfc_aux_baseline",
-    "sfc_boiler_baseline",
-    "sfc_pilot_fuel",
-    "fuel_sulfur_fraction_global",
-    "fuel_sulfur_fraction_eca",
-    "bc_aux_factor_global",
-    "bc_aux_factor_eca",
-    "bc_boiler_factor_global",
-    "bc_boiler_factor_eca",
-    "ch4_main_engine_factor",
-    "ch4_aux_factor",
-    "ch4_boiler_factor",
-    "co_main_engine_factor_global",
-    "co_main_engine_factor_eca",
-    "co_aux_factor_global",
-    "co_aux_factor_eca",
-    "co_boiler_factor_global",
-    "co_boiler_factor_eca",
-    "n2o_main_engine_factor_global",
-    "n2o_main_engine_factor_eca",
-    "n2o_aux_factor_global",
-    "n2o_aux_factor_eca",
-    "n2o_boiler_factor_global",
-    "n2o_boiler_factor_eca",
-    "nmvoc_main_engine_factor",
-    "nmvoc_aux_factor",
-    "nmvoc_boiler_factor",
-    "nox_main_engine_factor_global",
-    "nox_main_engine_factor_eca",
-    "nox_aux_factor_global",
-    "nox_aux_factor_eca",
-    "nox_boiler_factor_global",
-    "nox_boiler_factor_eca",
-    "sox_main_engine_global_factor",
-    "sox_aux_global_factor",
-    "sox_boiler_global_factor",
-    "sox_main_engine_eca_factor",
-    "sox_aux_eca_factor",
-    "sox_boiler_eca_factor",
-)
+df_vessel = select_vessel_columns(df_vessel)
 
 # COMMAND ----------
 
@@ -473,7 +475,15 @@ for list_of_dates in periods:
     df_ais_in = read_ais_voyages(TABLE_NAME_AIS, start_date, end_date)
 
     # Merge AIS and vessel data
-    df_merged = df_ais_in.join(broadcast(df_vessel), on="vessel_id", how="inner")
+    df_merged = df_ais_in.join(
+        broadcast(df_vessel),
+        on=(
+            (df_ais_in.vessel_id == df_vessel.vessel_id)
+            & (to_date(df_ais_in.date_time_utc) >= df_vessel.start_date)
+            & (to_date(df_ais_in.date_time_utc) <= df_vessel.end_date)
+        ),
+        how="inner",
+    ).drop(df_vessel.vessel_id)
 
     # Join Area datasets:
     for area in AREA_TABLES:
@@ -483,6 +493,7 @@ for list_of_dates in periods:
         k_ring = area.get("k_ring")
         h3 = area.get("hex_resolution")
         h3_krings = area.get("hex_krings") if k_ring else None
+        filter_expr = area.get("filter_sql_expression")
 
         # Read area data:
         df_area = select_expression_from_table_and_prefix_columns(
@@ -490,6 +501,9 @@ for list_of_dates in periods:
             select_expr=area.get("select_expression"),
             column_prefix=area_name,
         )
+
+        if filter_expr:
+            df_area = df_area.where(filter_expr)
 
         # Join Area and AIS data:
         df_merged = join_ais_area(
@@ -502,8 +516,6 @@ for list_of_dates in periods:
             k_rings=h3_krings,
         )
 
-    df_merged = df_merged.drop("municipality_year")
-
     # Set area distance
     df_merged_area_distance = set_area_distance(df_merged, CLOSE_TO_POWER_CELL)
 
@@ -511,7 +523,10 @@ for list_of_dates in periods:
     df_kwh_consumption = calculate_energy_consumption(df_merged_area_distance)
 
     # Set electric shore power at berth
-    df_electric_shore_power = set_electric_shore_power_at_berth(df_kwh_consumption)
+    df_vessel_shore_power = join_ais_vessel_port_electric(
+        df_kwh_consumption, df_vessel_port_electric, df_vessel_type_port_electric
+    )
+    df_electric_shore_power = set_electric_shore_power_at_berth(df_vessel_shore_power)
     df_shore_power_phase = set_phase_p_when_electric_shore_power_at_berth(
         df_electric_shore_power
     )
@@ -534,12 +549,14 @@ for list_of_dates in periods:
     df_co2e = calculate_co2e(df_total_emission, var)
 
     # Add processing time
-    df_procsessingtime = add_processing_timestamp(df_co2e)
+    df_processingtime = add_processing_timestamp(df_co2e)
 
-    # Add version number
-    df_final = df_procsessingtime.withColumn("version", lit(VERSION))
+    # Add version number and select columns
+    df_version = df_processingtime.withColumn("version", lit(VERSION))
+    df_selected = select_maru_output_columns(df_version)
 
-    df_final.write.mode("append").saveAsTable(MARU_FULL_TABLE_NAME)
+    # Write table
+    df_selected.write.mode("append").saveAsTable(TABLE_NAME_MARU)
 
     print("Successfully wrote data until ", end_date)
     end_time = time.time()
@@ -549,7 +566,7 @@ for list_of_dates in periods:
     print(f"Total time: {minutes} minutes and {seconds} seconds")
 
     # Write AIS job statistics:
-    df_dates_written = df_final.select(
+    df_dates_written = df_selected.select(
         to_date("date_time_utc").alias("date_utc"), "bi_processing_time"
     ).dropDuplicates(subset=["date_utc"])
 
@@ -558,6 +575,5 @@ for list_of_dates in periods:
         target_col_notebook=notebook_name,
         updates_col_timestamp="bi_processing_time",
     )
-
 
 print("Finished.")

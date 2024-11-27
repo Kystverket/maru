@@ -193,7 +193,7 @@ def calculate_co(df: DataFrame, engines: list) -> DataFrame:
         co_calulation = (
             df[f"{engine}_kwh"]
             * (1 - df["degree_of_electrification"])
-            * (~df["electric_shore_power_at_berth"]).cast("int")
+            * df["electric_shore_power_at_berth_reduction_factor"]
             / 1_000_000
         )
 
