@@ -3,8 +3,7 @@ from pyspark.sql.functions import when
 
 
 def set_sox_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataFrame:
-    """
-    Set `SOx` (Sulphur Dioxide) factor based on fuel type.
+    """Set `SOx` (Sulphur Dioxide) factor based on fuel type.
 
     Reference is the IMO GHG 4.study. Equation (15) p. 74 (102) is used to calculate SOx for residual and distillate fuel:
 
@@ -17,8 +16,8 @@ def set_sox_factor(df: DataFrame, var: dict, engines: list, areas: list) -> Data
     SOx emissions from vessel consuming LNG or Methanol are obtained from table 48 p. 409 (437).
 
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: PySpark DataFrame
         Input dataframe containing fuel type and fuel suplfur fraction.
     var: dict
@@ -30,11 +29,11 @@ def set_sox_factor(df: DataFrame, var: dict, engines: list, areas: list) -> Data
 
 
     Returns:
-    --------
+    -------
     PySpark DataFrame
         Output dataframe with SOx factor added as columns.
-    """
 
+    """
     for engine in engines:
         for area in areas:
             df = df.withColumn(
@@ -59,12 +58,10 @@ def set_sox_factor(df: DataFrame, var: dict, engines: list, areas: list) -> Data
 
 
 def calculate_sox(df: DataFrame, engines: list) -> DataFrame:
-    """
-    Calculate `SOx` (Sulphur Dioxide) emissions by multiplying the SOx factor
-    with the fuel consumption of the engines.
+    """Calculate `SOx` (Sulphur Dioxide) emissions by multiplying the SOx factor with the fuel consumption of the engines.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: PySpark DataFrame
         - eca (bool): Inside / outside Emission Control Area
         - sox factors (float): Factors set by function set_sox_factor
@@ -74,11 +71,11 @@ def calculate_sox(df: DataFrame, engines: list) -> DataFrame:
         A list of engine types to calculate SOx factor for.
 
     Returns:
-    --------
+    -------
     PySpark DataFrame
         Output dataframe with SOx emissions calculated as columns.
-    """
 
+    """
     for engine in engines:
         df = df.withColumn(
             f"sox_{engine}_tonnes",

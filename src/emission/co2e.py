@@ -2,11 +2,10 @@ from pyspark.sql import DataFrame
 
 
 def calculate_co2e(df: DataFrame, var: dict) -> DataFrame:
-    """
-    CO2 equivalent (co2e) according to "Global warming potential in a 100-year perspective (GWP100, global)" from the Norwegian Environment Agency (Miljødirektoratet).
+    """CO2 equivalent (co2e) according to "Global warming potential in a 100-year perspective (GWP100, global)" from the Norwegian Environment Agency (Miljødirektoratet).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Input dataframe containing columns "main_engine_fueltype"
 
@@ -15,11 +14,11 @@ def calculate_co2e(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A new dataframe with the additional column "co2e_factor"
-    """
 
+    """
     df = df.withColumn(
         "co2e_tonnes",
         df["co2_tonnes"] * var["co2e_gwp100_co2"]

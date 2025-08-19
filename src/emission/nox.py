@@ -3,11 +3,10 @@ from pyspark.sql.functions import lit, when
 
 
 def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Set `NOx` (Nitrogen Oxides) factor in gram based on fuel type, rpm, and year.
+    """Set `NOx` (Nitrogen Oxides) factor in gram based on fuel type, rpm, and year.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Input dataframe containing columns "main_engine_fueltype",
         "main_engine_rpm", "year_of_build", and "main_engine_enginetype".
@@ -17,11 +16,11 @@ def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A new dataframe with the additional column "nox_main_engine_factor".
-    """
 
+    """
     df = df.withColumn(
         "nox_main_engine_factor_global",
         # Gas turbine (GT):
@@ -29,18 +28,21 @@ def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
             (df["main_engine_enginetype"] == "GT")
             & (df["main_engine_fueltype"] == "LNG"),
             var["nox_main_engine_gt_lng"],
-        ).when(df["main_engine_enginetype"] == "GT", var["nox_main_engine_gt"])
+        )
+        .when(df["main_engine_enginetype"] == "GT", var["nox_main_engine_gt"])
         # Steam turbine (ST):
         .when(
             (df["main_engine_enginetype"] == "ST")
             & (df["main_engine_fueltype"] == "LNG"),
             var["nox_main_engine_st_lng"],
-        ).when(df["main_engine_enginetype"] == "ST", var["nox_main_engine_st"])
+        )
+        .when(df["main_engine_enginetype"] == "ST", var["nox_main_engine_st"])
         # LNG Otto:
         .when(
             df["main_engine_enginetype"] == "LNG-Otto SS",
             var["nox_main_engine_lng_otto_ss"],
-        ).when(
+        )
+        .when(
             df["main_engine_enginetype"] == "LNG-Otto MS",
             var["nox_main_engine_lng_otto_ms"],
         )
@@ -133,11 +135,10 @@ def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
 
 
 def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Set `NOx` (Nitrogen Oxides) factor in gram based on fuel type, rpm, and year for ECA (Emission Control Areas).
+    """Set `NOx` (Nitrogen Oxides) factor in gram based on fuel type, rpm, and year for ECA (Emission Control Areas).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Input dataframe containing columns "main_engine_fueltype",
         "main_engine_rpm", "year_of_build", "main_engine_enginetype", and "tier_group_nox".
@@ -147,11 +148,11 @@ def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A new dataframe with the additional column "nox_main_engine_eca_factor".
-    """
 
+    """
     df = df.withColumn(
         "nox_main_engine_factor_eca",
         # Tier group 3:
@@ -194,11 +195,10 @@ def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
 
 
 def set_nox_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFrame:
-    """
-    Set `NOx` (Nitrogen Oxides) factor for auxiliary engines and boiler based on fuel type.
+    """Set `NOx` (Nitrogen Oxides) factor for auxiliary engines and boiler based on fuel type.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Input dataframe containing columns fuel_type.
 
@@ -210,11 +210,11 @@ def set_nox_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFr
         A list of engine types, ie. aux, boiler
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A new dataframe with the additional columns for eca and global factors for each engine.
-    """
 
+    """
     for engine in engines:
         df = df.withColumn(
             f"nox_{engine}_factor_global",
@@ -241,11 +241,10 @@ def set_nox_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFr
 
 
 def calculate_nox(df: DataFrame, engines: list) -> DataFrame:
-    """
-    Calculate `NOx` (Nitrogen Oxides) emissions in `tonnes` for different engine types and boilers.
+    """Calculate `NOx` (Nitrogen Oxides) emissions in `tonnes` for different engine types and boilers.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Input dataframe containing columns for each engine category
         and boiler.
@@ -254,10 +253,11 @@ def calculate_nox(df: DataFrame, engines: list) -> DataFrame:
         A list of engine types, ie. main_engine, aux, boiler
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A new dataframe with the additional columns for NOx emissions
         for each engine category and boiler.
+
     """
     for engine in engines:
         nox_calculation = (

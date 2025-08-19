@@ -3,11 +3,10 @@ from pyspark.sql.functions import when
 
 
 def set_n2o_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the `n2o` (Nitrous Oxide) factor in `g/kWh` for main engine.
+    """Set the `n2o` (Nitrous Oxide) factor in `g/kWh` for main engine.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         A PySpark DataFrame object containing containing the necessary columns: 'main_engine_enginetype', 'main_engine_fueltype'
 
@@ -16,11 +15,11 @@ def set_n2o_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    -----------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame object with the n2o factor values added as a new column.
-    """
 
+    """
     df = df.withColumn(
         "n2o_main_engine_factor_global",
         # Methanol:
@@ -30,7 +29,8 @@ def set_n2o_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
             (df["main_engine_enginetype"] == "SSD")
             & (df["main_engine_fueltype"] == "Residual Fuel"),
             var["n2o_main_engine_ssd_residual_fuel"],
-        ).when(
+        )
+        .when(
             (df["main_engine_enginetype"] == "SSD")
             & (df["main_engine_fueltype"] == "Distillate Fuel"),
             var["n2o_main_engine_ssd_distillate_fuel"],
@@ -40,7 +40,8 @@ def set_n2o_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
             (df["main_engine_enginetype"] == "MSD")
             & (df["main_engine_fueltype"] == "Residual Fuel"),
             var["n2o_main_engine_msd_residual_fuel"],
-        ).when(
+        )
+        .when(
             (df["main_engine_enginetype"] == "MSD")
             & (df["main_engine_fueltype"] == "Distillate Fuel"),
             var["n2o_main_engine_msd_distillate_fuel"],
@@ -50,7 +51,8 @@ def set_n2o_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
             (df["main_engine_enginetype"] == "HSD")
             & (df["main_engine_fueltype"] == "Residual Fuel"),
             var["n2o_main_engine_hsd_residual_fuel"],
-        ).when(
+        )
+        .when(
             (df["main_engine_enginetype"] == "HSD")
             & (df["main_engine_fueltype"] == "Distillate Fuel"),
             var["n2o_main_engine_hsd_distillate_fuel"],
@@ -116,18 +118,18 @@ def set_n2o_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
             (df["main_engine_enginetype"] == "HSD")
             & (df["main_engine_fueltype"] == "Residual Fuel"),
             var["n2o_main_engine_hsd_distillate_fuel"],
-        ).otherwise(df["n2o_main_engine_factor_global"]),
+        )
+        .otherwise(df["n2o_main_engine_factor_global"]),
     )
 
     return df
 
 
 def set_n2o_aux_boiler_factor(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the `n2o` (Nitrous Oxide) factor in `g/kWh` for aux engine.
+    """Set the `n2o` (Nitrous Oxide) factor in `g/kWh` for aux engine.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         A PySpark DataFrame object containing containing the necessary column: 'main_engine_fueltype'
 
@@ -136,9 +138,10 @@ def set_n2o_aux_boiler_factor(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    -----------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame object with the n2o factor values added as a new column.
+
     """
     aux_boiler_engines = ["aux", "boiler"]
 
@@ -169,15 +172,15 @@ def set_n2o_aux_boiler_factor(df: DataFrame, var: dict) -> DataFrame:
 
 
 def calculate_n2o(df: DataFrame, engines: list) -> DataFrame:
-    """
-    Calculates the `n2o` (Nitrous Oxide) emission in tonnes for each engine type 'main_engine', 'aux', 'boiler', based on their
-    respective factors, i.e. 'n2o_main_engine_factor_kwh', 'n2o_aux_factor_kwh', 'n2o_boiler_factor_kwh', and the
+    """Calculate the `n2o` (Nitrous Oxide) emission in tonnes for each engine type 'main_engine', 'aux', 'boiler'.
+
+    The calculation is based on their respective factors, i.e. 'n2o_main_engine_factor_kwh', 'n2o_aux_factor_kwh', 'n2o_boiler_factor_kwh', and the
     energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
     respectively. The calculation is based on the formula n2o_emission = factor * kWh_consumption / 1 000 000.
     (g / kwh => divide by 1 000 000 to get tonnes)
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         A PySpark DataFrame object containing the data to be processed.
 
@@ -185,11 +188,11 @@ def calculate_n2o(df: DataFrame, engines: list) -> DataFrame:
         A list of engine types to calculate N2O factor for.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame object with the n2o emission values in tonnes.
-    """
 
+    """
     for engine in engines:
         n2o_calulation = (
             df[f"{engine}_kwh"]

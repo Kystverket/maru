@@ -22,17 +22,20 @@ from pyspark.sql.window import Window
 
 ENV: str = os.getenv("ENVIRONMENT")
 
-FULL_TABLE_NAME_AUX_BOILER_KWH = f"silver_{ENV}.maru.vessel_aux_boiler_kw"
+FULL_TABLE_NAME_AUX_BOILER_KWH = f"gold_{ENV}.maru.vessel_aux_boiler_kw"
 FULL_TABLE_NAME_FAIRPLAY_MAINENGINE = f"gold_{ENV}.fairplay.tblmainengines"
 FULL_TABLE_NAME_FAIRPLAY_SHIPDATA = f"gold_{ENV}.fairplay.shipdata"
 FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL = f"gold_{ENV}.maru.dim_vessel_historical"
 FULL_TABLE_NAME_MARU_VESSEL_CURRENT = f"gold_{ENV}.maru.dim_vessel_current"
+FULL_TABLE_NAME_SHIPTYPE_MAPPINGS = f"silver_{ENV}.shiptype_mappings.shiptype_mappings"
+
 FULL_TABLE_NAME_VESSEL_BATTERY = f"gold_{ENV}.maru.vessel_battery"
-FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED = f"gold_{ENV}.shipdata.combined_imputated"
+FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED = f"gold_{ENV}.shipdata.combined_imputation"
 FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED_IMO_MMSI = (
-    f"gold_{ENV}.shipdata.combined_imputated_imo_mmsi"
+    f"gold_{ENV}.shipdata.combined_exploded_imputation"
 )
-FULL_TABLE_NAME_VESSEL_TYPE = f"silver_{ENV}.maru.vessel_type"
+FULL_TABLE_NAME_VESSEL_COMBINED = f"gold_{ENV}.shipdata.combined"
+FULL_TABLE_NAME_VESSEL_TYPE = f"gold_{ENV}.maru.vessel_type"
 
 VESSEL_UNIT_AUX_BOILER_KW = ["gt", "dwt", "teu", "cbm"]
 
@@ -49,63 +52,64 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS gold_{ENV}.maru")
 spark.sql(
     f"""
 CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL} (
-  vessel_id INT COMMENT 'Identifier for the vessel',
-  start_date DATE COMMENT 'Start date of the entry',
-  end_date DATE COMMENT 'End date of the entry',
-  mmsi ARRAY<STRING> COMMENT 'Maritime Mobile Service Identity array',
-  imo DOUBLE COMMENT 'International Maritime Organization number',
-  call_sign STRING COMMENT 'Vessel call sign',
-  ship_name STRING COMMENT 'Name of the ship',
-  flag_code STRING COMMENT 'Flag country code',
-  vessel_type_imo_ghg STRING COMMENT 'Vessel type according to IMO GHG',
-  vessel_type_maru STRING COMMENT 'Vessel type according to Maru classification',
-  statcode5 STRING COMMENT 'Statcode5 code',
-  year_of_build DOUBLE COMMENT 'Year the vessel was built',
-  gt DOUBLE COMMENT 'Gross tonnage',
-  dwt DOUBLE COMMENT 'Deadweight tonnage',
-  teu DOUBLE COMMENT 'Twenty-foot Equivalent Unit',
-  cbm DOUBLE COMMENT 'Cubic meter',
-  length_overall DOUBLE COMMENT 'Overall length of the vessel',
-  breadth_moulded DOUBLE COMMENT 'Breadth of the vessel moulded',
-  draught DOUBLE COMMENT 'Draught of the vessel',
-  ship_type STRING COMMENT 'Type of the ship',
-  main_engine_rpm DOUBLE COMMENT 'RPM (revolutions per minute) of the main engine',
-  main_engine_kw DOUBLE COMMENT 'KW of the main engine',
-  stroketype DOUBLE COMMENT 'Type of engine stroke',
-  speed_service DOUBLE COMMENT 'Service speed of the vessel',
-  speed_max DOUBLE COMMENT 'Maximum speed of the vessel',
-  power_kw_max DOUBLE COMMENT 'Maximum power in KW',
-  fp_fueltype1code STRING COMMENT 'Primary fuel type code',
-  fp_fueltype2code STRING COMMENT 'Secondary fuel type code',
-  fp_me_enginetype STRING COMMENT 'Main engine type',
-  fp_propulsiontype STRING COMMENT 'Type of propulsion',
-  engine_builder STRING COMMENT 'Engine builder',
-  engine_model STRING COMMENT 'Engine model',
-  degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
-  battery_installation_year INT COMMENT 'Year of battery installation',
-  route STRING COMMENT 'Vessel route',
-  battery_pack_kwh INT COMMENT 'Battery pack capacity in kWh',
-  aux_berth_kw INT COMMENT 'Auxiliary power at berth in kW',
-  aux_anchor_kw INT COMMENT 'Auxiliary power at anchor in kW',
-  aux_maneuver_kw INT COMMENT 'Auxiliary power during maneuvering in kW',
-  aux_cruise_kw INT COMMENT 'Auxiliary power during cruising in kW',
-  boiler_berth_kw INT COMMENT 'Boiler power at berth in kW',
-  boiler_anchor_kw INT COMMENT 'Boiler power at anchor in kW',
-  boiler_maneuver_kw INT COMMENT 'Boiler power during maneuvering in kW',
-  boiler_cruise_kw INT COMMENT 'Boiler power during cruising in kW',
-  length_group STRING COMMENT 'Grouping by length',
-  tier_group INT COMMENT 'Tier group',
-  tier_group_nox INT COMMENT 'NOx tier group',
-  year_group STRING COMMENT 'Grouping by year',
-  gt_group STRING COMMENT 'Grouping by gross tonnage',
-  dwt_group STRING COMMENT 'Grouping by deadweight tonnage',
-  fp_propulsiontypecode STRING COMMENT 'Propulsion type code',
-  main_engine_fueltype STRING COMMENT 'Main engine fuel type',
-  main_engine_fueltype_original STRING COMMENT 'Original main engine fuel type',
-  main_engine_enginetype STRING COMMENT 'Main engine type'
+    vessel_id INT COMMENT 'Identifier for the vessel',
+    start_date DATE COMMENT 'Start date of the entry',
+    end_date DATE COMMENT 'End date of the entry',
+    mmsi ARRAY<INT> COMMENT 'Maritime Mobile Service Identity array',
+    imo ARRAY<INT> COMMENT 'International Maritime Organization number',
+    call_sign ARRAY<STRING> COMMENT 'Vessel call sign',
+    ship_name STRING COMMENT 'Name of the ship',
+    flag_code STRING COMMENT 'Flag country code',
+    vessel_type_imo_ghg STRING COMMENT 'Vessel type according to IMO GHG',
+    vessel_type_maru STRING COMMENT 'Vessel type according to Maru classification',
+    statcode5 STRING COMMENT 'Statcode5 code',
+    year_of_build INT COMMENT 'Year the vessel was built',
+    gt FLOAT COMMENT 'Gross tonnage',
+    dwt FLOAT COMMENT 'Deadweight tonnage',
+    teu FLOAT COMMENT 'Twenty-foot Equivalent Unit',
+    cbm FLOAT COMMENT 'Cubic meter',
+    length_overall FLOAT COMMENT 'Overall length of the vessel',
+    breadth_moulded FLOAT COMMENT 'Breadth of the vessel moulded',
+    draught FLOAT COMMENT 'Draught of the vessel',
+    ship_type STRING COMMENT 'Type of the ship',
+    main_engine_rpm FLOAT COMMENT 'RPM (revolutions per minute) of the main engine',
+    main_engine_kw FLOAT COMMENT 'KW of the main engine',
+    stroketype INT COMMENT 'Type of engine stroke',
+    speed_service FLOAT COMMENT 'Service speed of the vessel',
+    speed_max FLOAT COMMENT 'Maximum speed of the vessel',
+    power_kw_max FLOAT COMMENT 'Maximum power in KW',
+    fp_fueltype1code STRING COMMENT 'Primary fuel type code',
+    fp_fueltype2code STRING COMMENT 'Secondary fuel type code',
+    fp_me_enginetype STRING COMMENT 'Main engine type',
+    fp_propulsiontype STRING COMMENT 'Type of propulsion',
+    fp_lengthbetweenperpendicularslbp FLOAT COMMENT 'Length between the forward and aft perpendiculars',
+    fp_displacement INT COMMENT 'The total weight of the ship (tonnes) based on the volume of water it pushes aside when fully loaded',
+    fp_breadthextreme FLOAT COMMENT 'The maximum width of the hull of the ship, measured at the widest point',
+    engine_builder STRING COMMENT 'Engine builder',
+    engine_model STRING COMMENT 'Engine model',
+    degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
+    battery_pack_kwh INT COMMENT 'Battery pack capacity in kWh',
+    aux_berth_kw INT COMMENT 'Auxiliary power at berth in kW',
+    aux_anchor_kw INT COMMENT 'Auxiliary power at anchor in kW',
+    aux_maneuver_kw INT COMMENT 'Auxiliary power during maneuvering in kW',
+    aux_cruise_kw INT COMMENT 'Auxiliary power during cruising in kW',
+    boiler_berth_kw INT COMMENT 'Boiler power at berth in kW',
+    boiler_anchor_kw INT COMMENT 'Boiler power at anchor in kW',
+    boiler_maneuver_kw INT COMMENT 'Boiler power during maneuvering in kW',
+    boiler_cruise_kw INT COMMENT 'Boiler power during cruising in kW',
+    length_group STRING COMMENT 'Grouping by length',
+    tier_group INT COMMENT 'Tier group',
+    tier_group_nox INT COMMENT 'NOx tier group',
+    year_group STRING COMMENT 'Grouping by year',
+    gt_group STRING COMMENT 'Grouping by gross tonnage',
+    dwt_group STRING COMMENT 'Grouping by deadweight tonnage',
+    fp_propulsiontypecode STRING COMMENT 'Propulsion type code',
+    main_engine_fueltype STRING COMMENT 'Main engine fuel type',
+    main_engine_fueltype_original STRING COMMENT 'Original main engine fuel type',
+    main_engine_enginetype STRING COMMENT 'Main engine type'
 )
 CLUSTER BY (vessel_id, start_date, end_date)
-COMMENT 'Ship register for the MarU model. This table contains historical data with columns ´start_date´ ´end_date´'
+COMMENT 'Ship register for the MarU model. This table contains historical data with columns `start_date` `end_date`'
 """
 )
 
@@ -115,29 +119,29 @@ spark.sql(
     f"""
 CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME_MARU_VESSEL_CURRENT} (
   vessel_id INT COMMENT 'Identifier for the vessel',
-  mmsi ARRAY<STRING> COMMENT 'Maritime Mobile Service Identity array',
-  imo DOUBLE COMMENT 'International Maritime Organization number',
-  call_sign STRING COMMENT 'Vessel call sign',
+  mmsi ARRAY<INT> COMMENT 'Maritime Mobile Service Identity array',
+  imo ARRAY<INT> COMMENT 'International Maritime Organization number',
+  call_sign ARRAY<STRING> COMMENT 'Vessel call sign',
   ship_name STRING COMMENT 'Name of the ship',
   flag_code STRING COMMENT 'Flag country code',
   vessel_type_imo_ghg STRING COMMENT 'Vessel type according to IMO GHG',
   vessel_type_maru STRING COMMENT 'Vessel type according to Maru classification',
   statcode5 STRING COMMENT 'Statcode5 code',
-  year_of_build DOUBLE COMMENT 'Year the vessel was built',
-  gt DOUBLE COMMENT 'Gross tonnage',
-  dwt DOUBLE COMMENT 'Deadweight tonnage',
-  teu DOUBLE COMMENT 'Twenty-foot Equivalent Unit',
-  cbm DOUBLE COMMENT 'Cubic meter',
-  length_overall DOUBLE COMMENT 'Overall length of the vessel',
-  breadth_moulded DOUBLE COMMENT 'Breadth of the vessel moulded',
-  draught DOUBLE COMMENT 'Draught of the vessel',
+  year_of_build INT COMMENT 'Year the vessel was built',
+  gt FLOAT COMMENT 'Gross tonnage',
+  dwt FLOAT COMMENT 'Deadweight tonnage',
+  teu FLOAT COMMENT 'Twenty-foot Equivalent Unit',
+  cbm FLOAT COMMENT 'Cubic meter',
+  length_overall FLOAT COMMENT 'Overall length of the vessel',
+  breadth_moulded FLOAT COMMENT 'Breadth of the vessel moulded',
+  draught FLOAT COMMENT 'Draught of the vessel',
   ship_type STRING COMMENT 'Type of the ship',
-  main_engine_rpm DOUBLE COMMENT 'RPM (revolutions per minute) of the main engine',
-  main_engine_kw DOUBLE COMMENT 'KW of the main engine',
-  stroketype DOUBLE COMMENT 'Type of engine stroke',
-  speed_service DOUBLE COMMENT 'Service speed of the vessel',
-  speed_max DOUBLE COMMENT 'Maximum speed of the vessel',
-  power_kw_max DOUBLE COMMENT 'Maximum power in KW',
+  main_engine_rpm FLOAT COMMENT 'RPM (revolutions per minute) of the main engine',
+  main_engine_kw FLOAT COMMENT 'KW of the main engine',
+  stroketype INT COMMENT 'Type of engine stroke',
+  speed_service FLOAT COMMENT 'Service speed of the vessel',
+  speed_max FLOAT COMMENT 'Maximum speed of the vessel',
+  power_kw_max FLOAT COMMENT 'Maximum power in KW',
   fp_fueltype1code STRING COMMENT 'Primary fuel type code',
   fp_fueltype2code STRING COMMENT 'Secondary fuel type code',
   fp_me_enginetype STRING COMMENT 'Main engine type',
@@ -145,8 +149,6 @@ CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME_MARU_VESSEL_CURRENT} (
   engine_builder STRING COMMENT 'Engine builder',
   engine_model STRING COMMENT 'Engine model',
   degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
-  battery_installation_year INT COMMENT 'Year of battery installation',
-  route STRING COMMENT 'Vessel route',
   battery_pack_kwh INT COMMENT 'Battery pack capacity in kWh',
   aux_berth_kw INT COMMENT 'Auxiliary power at berth in kW',
   aux_anchor_kw INT COMMENT 'Auxiliary power at anchor in kW',
@@ -163,6 +165,9 @@ CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME_MARU_VESSEL_CURRENT} (
   gt_group STRING COMMENT 'Grouping by gross tonnage',
   dwt_group STRING COMMENT 'Grouping by deadweight tonnage',
   fp_propulsiontypecode STRING COMMENT 'Propulsion type code',
+  fp_lengthbetweenperpendicularslbp FLOAT COMMENT 'Length between the forward and aft perpendiculars',
+  fp_displacement INT COMMENT 'The total weight of the ship (tonnes) based on the volume of water it pushes aside when fully loaded',
+  fp_breadthextreme FLOAT COMMENT 'The maximum width of the hull of the ship, measured at the widest point',
   main_engine_fueltype STRING COMMENT 'Main engine fuel type',
   main_engine_fueltype_original STRING COMMENT 'Original main engine fuel type',
   main_engine_enginetype STRING COMMENT 'Main engine type'
@@ -182,10 +187,27 @@ COMMENT 'Ship register for the MarU model. This table contains current data with
 
 # COMMAND ----------
 
-df_shipdata_combined = spark.table(FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED)
+df_shipdata_combined = (
+    spark.table(FULL_TABLE_NAME_VESSEL_COMBINED)
+    .select("csid", "fairplay_id")
+    .distinct()
+)
+
+df_shipdata_combined_imputated = spark.table(
+    FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED
+).where(
+    "!(mmsi[0]=257657900 and ship_name='TARGA') and !(mmsi[0]=235112231)"
+)  # (DATA-1499), (DATA-1722)
+
 df_shipdata_combined_imo_mmsi = spark.table(
     FULL_TABLE_NAME_VESSEL_COMBINED_IMPUTATED_IMO_MMSI
-).where("row_number_mmsi_imo = 1 AND mmsi < 776000000")
+).where("mmsi < 776000000 and mmsi != 235112231")  # (DATA-1722)
+
+df_shiptype_mappings = (
+    spark.table(FULL_TABLE_NAME_SHIPTYPE_MAPPINGS)
+    .where("target_vocabulary ='maru' AND source_vocabulary='statcode5'")
+    .select("source_id", "target_id")
+)
 
 df_battery_electric = spark.table(FULL_TABLE_NAME_VESSEL_BATTERY)
 
@@ -201,7 +223,7 @@ df_fairplay = spark.sql(
     f"""
 WITH tmp_mainengine AS (
 SELECT
-	lrno AS fp_imo, 
+	lrno AS fp_imo,
 	FIRST_VALUE(enginebuilder) OVER (PARTITION BY lrno ORDER BY Position) as fp_me_enginebuilder,
 	FIRST_VALUE(enginemodel) OVER (PARTITION BY lrno ORDER BY Position) as fp_me_enginemodel
 FROM {FULL_TABLE_NAME_FAIRPLAY_MAINENGINE}
@@ -216,16 +238,19 @@ FROM tmp_mainengine
 GROUP BY fp_imo
 )
 
-SELECT 
+SELECT
 	lrimoshipno as fp_imo,
+    lengthbetweenperpendicularslbp as fp_lengthbetweenperpendicularslbp,
+    breadthextreme as fp_breadthextreme,
+    displacement as fp_displacement,
 	fueltype1code as fp_fueltype1code,
- 	fueltype2code as fp_fueltype2code,
+    fueltype2code as fp_fueltype2code,
 	MainEngineType as fp_me_enginetype,
 	me.fp_me_enginebuilder,
 	me.fp_me_enginemodel,
 	propulsiontype as fp_propulsiontype
 	FROM {FULL_TABLE_NAME_FAIRPLAY_SHIPDATA} fp
-	LEFT JOIN tmp_mainengine_grouped me ON me.fp_imo = fp.lrimoshipno 
+	LEFT JOIN tmp_mainengine_grouped me ON me.fp_imo = fp.lrimoshipno
     WHERE `__END_AT` IS NULL
  """
 )
@@ -243,7 +268,7 @@ window = Window.partitionBy("vessel_type", "size_bin").orderBy("low_limit")
 df_aux_boiler_in = (
     spark.table(FULL_TABLE_NAME_AUX_BOILER_KWH)
     .withColumn("row_number", row_number().over(window))
-    .filter("row_number == 1")
+    .where("row_number == 1")
     .drop("row_number")
 )
 
@@ -257,55 +282,63 @@ df_aux_boiler_in = (
 
 # COMMAND ----------
 
-com = df_shipdata_combined.alias("com")
+com_imp = df_shipdata_combined_imputated.alias("com_imp")
 com_filtered = (
     df_shipdata_combined_imo_mmsi.select("vessel_id").distinct().alias("com_filtered")
 )
+com = df_shipdata_combined.alias("com")
 fpl = df_fairplay.alias("fpl")
 ele = df_battery_electric.alias("ele")
 vty = df_vessel_type.alias("vty")
+stm = df_shiptype_mappings.alias("stm")
 
 df_vessel_joined = (
-    com.join(com_filtered, on="vessel_id", how="inner")
+    com_imp.join(com_filtered, on="vessel_id", how="inner")
+    .join(com, com.csid == com_imp.vessel_id, how="inner")
     .join(fpl, fpl.fp_imo == com.fairplay_id, how="left")
     .join(ele, on="vessel_id", how="left")
     .join(vty, on="statcode5", how="left")
+    .join(stm, com_imp.statcode5 == stm.source_id, how="left")
     .select(
-        com.vessel_id,
-        com.mmsi,
-        com.imo,
-        coalesce(com.call_sign, lit("Unknown")).alias("call_sign"),
-        coalesce(com.ship_name, lit("Unknown")).alias("ship_name"),
-        coalesce(com.flag_code, lit("Unknown")).alias("flag_code"),
-        coalesce(com.vessel_type_imo_ghg, lit("Unknown")).alias("vessel_type_imo_ghg"),
+        com_imp.vessel_id,
+        com_imp.mmsi,
+        com_imp.imo,
+        com_imp.call_sign,
+        coalesce(com_imp.ship_name, lit("Unknown")).alias("ship_name"),
+        coalesce(com_imp.flag_code, lit("Unknown")).alias("flag_code"),
+        coalesce(stm.target_id, lit("Unknown")).alias("vessel_type_imo_ghg"),
         coalesce(vty.vessel_type, lit("Unknown")).alias("vessel_type_maru"),
-        coalesce(com.statcode5, lit("Unknown")).alias("statcode5"),
-        coalesce(com.year_of_build, lit(-99)).alias("year_of_build"),
-        coalesce(com.gt, lit(-99)).alias("gt"),
-        coalesce(com.dwt, lit(-99)).alias("dwt"),
-        coalesce(com.teu, lit(-99)).alias("teu"),
-        coalesce(com.liquid_capacity, com.gas_capacity, lit(-99)).alias("cbm"),
-        coalesce(com.length_overall, lit(-99)).alias("length_overall"),
-        coalesce(com.breadth_moulded, lit(-99)).alias("breadth_moulded"),
-        coalesce(com.draught, lit(-99)).alias("draught"),
-        coalesce(com.ship_type, lit("Unknown")).alias("ship_type"),
-        coalesce(com.main_engine_rpm, lit(-99)).alias("main_engine_rpm"),
-        coalesce(com.power_kw_max, lit(-99)).alias("main_engine_kw"),
-        coalesce(com.main_engine_stroke_type, lit(-99)).alias("stroketype"),
-        coalesce(com.speed_service, lit(-99)).alias("speed_service"),
-        coalesce(com.speed_max, lit(-99)).alias("speed_max"),
-        coalesce(com.power_kw_max, lit(-99)).alias("power_kw_max"),
+        coalesce(com_imp.statcode5, lit("Unknown")).alias("statcode5"),
+        coalesce(com_imp.year_of_build, lit(-99)).alias("year_of_build"),
+        coalesce(com_imp.gross_tonnage, lit(-99)).alias("gt"),
+        coalesce(com_imp.deadweight_tonnage, lit(-99)).alias("dwt"),
+        coalesce(com_imp.twentyfoot_equivalent_unit, lit(-99)).alias("teu"),
+        coalesce(com_imp.liquid_capacity, com_imp.gas_capacity, lit(-99)).alias("cbm"),
+        coalesce(com_imp.length_overall, lit(-99)).alias("length_overall"),
+        coalesce(com_imp.breadth_moulded, lit(-99)).alias("breadth_moulded"),
+        coalesce(com_imp.draught, lit(-99)).alias("draught"),
+        coalesce(com_imp.ship_type, lit("Unknown")).alias("ship_type"),
+        coalesce(com_imp.main_engine_rpm, lit(-99)).alias("main_engine_rpm"),
+        coalesce(com_imp.power_kw_max, lit(-99)).alias("main_engine_kw"),
+        coalesce(com_imp.main_engine_stroketype, lit(-99)).alias("stroketype"),
+        coalesce(com_imp.speed_service, lit(-99)).alias("speed_service"),
+        coalesce(com_imp.speed_max, lit(-99)).alias("speed_max"),
+        coalesce(com_imp.power_kw_max, lit(-99)).alias("power_kw_max"),
         coalesce(fpl.fp_fueltype1code, lit("UU")).alias("fp_fueltype1code"),
         coalesce(fpl.fp_fueltype2code, lit("UU")).alias("fp_fueltype2code"),
         coalesce(fpl.fp_me_enginetype, lit("Unknown")).alias("fp_me_enginetype"),
         coalesce(fpl.fp_propulsiontype, lit("Unknown")).alias("fp_propulsiontype"),
         coalesce(fpl.fp_me_enginebuilder, lit("Unknown")).alias("engine_builder"),
         coalesce(fpl.fp_me_enginemodel, lit("Unknown")).alias("engine_model"),
-        coalesce(ele.degree_of_electrification, lit(0)).alias(
-            "degree_of_electrification"
+        coalesce(fpl.fp_lengthbetweenperpendicularslbp, lit(-99)).alias(
+            "fp_lengthbetweenperpendicularslbp"
         ),
+        coalesce(fpl.fp_breadthextreme, lit(-99)).alias("fp_breadthextreme"),
+        coalesce(fpl.fp_displacement, lit(-99)).alias("fp_displacement"),
+        ele.degree_of_electrification,
         coalesce(ele.start_date, to_date(lit("1900-01-01"))).alias("start_date"),
         coalesce(ele.end_date, to_date(lit("2999-12-31"))).alias("end_date"),
+        coalesce(ele.battery_pack_kwh, lit(-99)).alias("battery_pack_kwh"),
     )
 )
 
@@ -337,7 +370,7 @@ df_vessel_aux_boiler_kwh = (
         (df_vessel_unpivot_unit.vessel_type_imo_ghg == df_aux_boiler_in.vessel_type)
         & (df_vessel_unpivot_unit.unit == df_aux_boiler_in.unit)
         & (df_vessel_unpivot_unit.unit_value >= df_aux_boiler_in.low_limit)
-        & ((df_vessel_unpivot_unit.unit_value < df_aux_boiler_in.high_limit)),
+        & (df_vessel_unpivot_unit.unit_value < df_aux_boiler_in.high_limit),
         how="inner",
     )
     .select(
@@ -373,21 +406,19 @@ df_vessel = df_vessel_joined.join(
 
 
 def set_propulsiontypecode(df: DataFrame) -> DataFrame:
-    """
-    Sets propsulsiontype code from propulsiontype.
+    """Set propsulsiontype code from propulsiontype.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary columns for the calculation: fp_propulsiontype
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
     Spark DataFrame with an additional column `fp_propulsiontypecode`.
 
     """
-
     df = df.withColumn(
         "fp_propulsiontypecode",
         when(df["fp_propulsiontype"] == "Battery-Electric", "BE")
@@ -433,9 +464,9 @@ def set_propulsiontypecode(df: DataFrame) -> DataFrame:
 
 
 def set_enginetype(df: DataFrame) -> DataFrame:
-    """
-    Set main engine type based on enigne data from ship registers.
-    Reference. Fourth IMO GHG study pp. 48 (76)
+    """Set main engine type based on enigne data from ship registers.
+
+    Reference: Fourth IMO GHG study pp. 48 (76)
 
     Engine types:
     - Nuclear
@@ -450,24 +481,24 @@ def set_enginetype(df: DataFrame) -> DataFrame:
     - LNG-Diesel
     - LBSI (Lean Burn Spark-Ignited)
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary columns for the calculation: fp_fueltype1first, fp_fueltype2second, fp_propulsiontypecode, fp_fueltype1code, fp_fueltype2code, engine_model, engine_builder, stroketype, main_engine_rpm
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
     Spark DataFrame with an additional column `main_engine_enginetype`.
 
     """
-
     df = df.withColumn(
         "main_engine_enginetype",
         when(
             (df["fp_fueltype1code"] == "NU") | (df["fp_fueltype2code"] == "NU"),
             "Nuclear",
-        ).when(df["fp_fueltype1code"] == "ME", "Methanol")
+        )
+        .when(df["fp_fueltype1code"] == "ME", "Methanol")
         # Steam Turbine(s), Geared Drive or S.Turb, Gear & Oil Eng(s), Ele or Steam Turbine(s), Elec.Drive or St. Turb(s) Elec Dr. Or D.E.
         .when(df["fp_propulsiontypecode"].isin(["SG", "SGDE", "SE", "SEDX"]), "ST")
         # Gas Turbine(s), Geared Drive or Oil Eng(s) & Gas Turb(s) El.Dr or Gas Turbine(s), Electric Drive or Gas Turbine(s) & Diesel Elec. or Oil Engs & Gas Turb(s), Geared
@@ -585,8 +616,7 @@ def set_enginetype(df: DataFrame) -> DataFrame:
 
 
 def set_fueltype(df: DataFrame) -> DataFrame:
-    """
-    Sets main_engine_fueltype based on input from ship registers.
+    """Set main_engine_fueltype based on input from ship registers.
 
     Fueltypes:
     - Distillate Fuel
@@ -598,13 +628,13 @@ def set_fueltype(df: DataFrame) -> DataFrame:
     - Nuclear
     - Hydrogen
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary columns for the calculation:  fp_fueltype1code, fp_fueltype2code, fp_propulsiontypecode, vessel_type_imo_ghg
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
     Spark DataFrame with an additional column .
 
@@ -627,9 +657,8 @@ def set_fueltype(df: DataFrame) -> DataFrame:
             "Coal",
         )
         # Nuclear
-        .when(df["fp_fueltype1code"] == "NU", "Nuclear").when(
-            df["fp_fueltype2code"] == "NU", "Nuclear"
-        )
+        .when(df["fp_fueltype1code"] == "NU", "Nuclear")
+        .when(df["fp_fueltype2code"] == "NU", "Nuclear")
         # Hydrogen
         .when(df["fp_fueltype1code"] == "HY", "Hydrogen")
         # Methanol
@@ -637,9 +666,8 @@ def set_fueltype(df: DataFrame) -> DataFrame:
         # Electric
         .when(df["fp_propulsiontypecode"] == "BE", "Electric")
         # Residuial Fuel
-        .when(df["fp_fueltype1code"] == "RF", "Residual Fuel").when(
-            df["fp_fueltype2code"] == "RF", "Residual Fuel"
-        )
+        .when(df["fp_fueltype1code"] == "RF", "Residual Fuel")
+        .when(df["fp_fueltype2code"] == "RF", "Residual Fuel")
         # Distillate Fuel
         .when(
             (df["fp_fueltype1code"] == "DF") & (df["fp_fueltype2code"] == "DF"),
@@ -677,20 +705,19 @@ def set_fueltype(df: DataFrame) -> DataFrame:
 
 
 def set_year(df: DataFrame) -> DataFrame:
-    """
-    Set year and assign 0 for missing values.
+    """Set year and assign 0 for missing values.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: year
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with the same columns.
-    """
 
+    """
     df = df.withColumn("year_of_build", coalesce(df["year_of_build"], lit(0)))
 
     return df
@@ -704,20 +731,19 @@ def set_year(df: DataFrame) -> DataFrame:
 
 
 def set_year_tier(df: DataFrame) -> DataFrame:
-    """
-    Set tier group from year.
+    """Set tier group from year.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: year
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with a new column: tier_group.
-    """
 
+    """
     df = df.withColumn(
         # Set year tier
         "tier_group",
@@ -739,20 +765,19 @@ def set_year_tier(df: DataFrame) -> DataFrame:
 
 
 def set_year_tier_nox(df: DataFrame) -> DataFrame:
-    """
-    nox tier according to IMO GHG fourth study, table 11.
+    """Nox tier according to IMO GHG fourth study, table 11.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: year
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with a new column: tier_group.
-    """
 
+    """
     df = df.withColumn(
         # Set year tier
         "tier_group_nox",
@@ -774,20 +799,19 @@ def set_year_tier_nox(df: DataFrame) -> DataFrame:
 
 
 def set_year_group(df: DataFrame) -> DataFrame:
-    """
-    Set year group from year.
+    """Set year group from year.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: year
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with a new column: year_group.
-    """
 
+    """
     df = df.withColumn(
         "year_group",
         when((df["year_of_build"] > 0) & (df["year_of_build"] < 1960), lit("y1, <1959"))
@@ -834,20 +858,19 @@ def set_year_group(df: DataFrame) -> DataFrame:
 
 
 def set_length_group(df: DataFrame) -> DataFrame:
-    """
-    Set length group from length.
+    """Set length group from length.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: length_overall
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with a new column: length_group.
-    """
 
+    """
     df = df.withColumn(
         "length_group",
         when((df["length_overall"] > 0) & (df["length_overall"] < 24), "l1, <24 m")
@@ -880,20 +903,19 @@ def set_length_group(df: DataFrame) -> DataFrame:
 
 
 def set_gt_group(df: DataFrame) -> DataFrame:
-    """
-    Set gt group (gross tonnage group) from gt (gross tonnage).
+    """Set gt group (gross tonnage group) from gt (gross tonnage).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: gt
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with a new column: gt_group.
-    """
 
+    """
     df = df.withColumn(
         "gt_group",
         when((df["gt"] > 0) & (df["gt"] < 400), "gt1, 0-399")
@@ -919,20 +941,19 @@ def set_gt_group(df: DataFrame) -> DataFrame:
 
 
 def set_dwt_group(df: DataFrame) -> DataFrame:
-    """
-    Set dwt group (deadweight tonnage group) from dwt (deadweight tonnage)
+    """Set dwt group (deadweight tonnage group) from dwt (deadweight tonnage).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary column for the calculation: dwt
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with a new column: dwt_group.
-    """
 
+    """
     df = df.withColumn(
         "dwt_group",
         when((df["dwt"] > 0) & (df["dwt"] < 5000), "dwt1, <5000")
@@ -979,27 +1000,26 @@ def set_dwt_group(df: DataFrame) -> DataFrame:
 
 
 def update_degree_of_electrification(df: DataFrame) -> DataFrame:
-    """
-    Sets degree_of_electrification to 0.95 for vessels with fuel_type = Electric when degree_of_electrification is not set from vessel_battery table.
+    """Set degree_of_electrification to 0.95 for vessels with fuel_type = Electric when degree_of_electrification is not set from vessel_battery table.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary columns for the calculation: fuel_type and degree_of_electrification
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
     Spark DataFrame with updated values.
-    """
 
+    """
     df = df.withColumn(
         "degree_of_electrification",
         when(
             (df["main_engine_fueltype"] == "Electric")
             & (df["degree_of_electrification"].isNull()),
             lit("0.95").cast("double"),
-        ).otherwise(df["degree_of_electrification"]),
+        ).otherwise(coalesce(df["degree_of_electrification"], lit(0))),
     )
 
     return df
@@ -1013,16 +1033,15 @@ def update_degree_of_electrification(df: DataFrame) -> DataFrame:
 
 
 def fill_missing_values_fueltype(df: DataFrame) -> DataFrame:
-    """
-    Fill missing values based on most frequent record (mode) in the group (vessel_type and gt).
+    """Fill missing values based on most frequent record (mode) in the group (vessel_type and gt).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary columns for the calculation:  main_engine_fueltype
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
     Spark DataFrame with an additional column .
 
@@ -1054,29 +1073,29 @@ def fill_missing_values_fueltype(df: DataFrame) -> DataFrame:
 
 
 def update_main_engine_kw_with_speed_correction_factor(df: DataFrame) -> DataFrame:
-    """
-    Applies a power correction factor to the 'main_engine_kw' column based on the vessel type.
+    """Apply a power correction factor to the 'main_engine_kw' column based on the vessel type.
 
     For some ship types (large container ships and cruise ships) the speed given in the ship registers (e.g. S&P Markit)
     correspond to lower engine loading than maximum continuous rating (MCR). The model therefore overpredict power output.
     A power correction factor of 0.70 is used for Cruise.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df : pyspark.sql.DataFrame
         Spark DataFrame containing the necessary columns for the calculation: 'vessel_type_maru' and 'main_engine_kw'.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with the 'main_engine_kw' column updated with the power correction factor.
-    """
 
+    """
     df = df.withColumn(
         "main_engine_kw",
-        when(df["vessel_type_maru"] == "Cruise", df["main_engine_kw"] * 0.7).otherwise(
-            df["main_engine_kw"]
-        ),
+        when(
+            df["vessel_type_maru"] == "Cruise",
+            (df["main_engine_kw"] * 0.7).cast("float"),
+        ).otherwise(df["main_engine_kw"]),
     )
     return df
 
@@ -1089,20 +1108,19 @@ def update_main_engine_kw_with_speed_correction_factor(df: DataFrame) -> DataFra
 
 
 def add_enriched_columns(df: DataFrame) -> DataFrame:
-    """
-    Select and add new columns to vessel dataset.
+    """Select and add new columns to vessel dataset.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         Spark DataFrame containing necessary columns (see specific columns in docstring for each function)
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         Spark DataFrame with new columns (see specific columns in docstring for each function).
-    """
 
+    """
     df = set_length_group(df)
     df = set_year_tier(df)
     df = set_year_tier_nox(df)
@@ -1160,6 +1178,9 @@ df_vessel_selected = df_vessel_enriched.select(
     "fp_fueltype2code",
     "fp_me_enginetype",
     "fp_propulsiontype",
+    "fp_breadthextreme",
+    "fp_displacement",
+    "fp_lengthbetweenperpendicularslbp",
     "engine_builder",
     "engine_model",
     "degree_of_electrification",
@@ -1192,13 +1213,14 @@ df_vessel_selected = df_vessel_enriched.select(
 
 # Check that input and output dataframe of unpivot and join have equal length
 count_expected = (
-    com.where("vessel_type_imo_ghg is not null")
-    .join(com_filtered, on="vessel_id", how="inner")
-    .join(df_battery_electric, on="vessel_id", how="left")
+    com_imp.join(com_filtered, on="vessel_id", how="inner")
+    .join(
+        stm, com_imp.statcode5 == stm.source_id, how="inner"
+    )  # vessel_type_imo_ghg is not null"
     .count()
 )
-count_actual = df_vessel_selected.count()
-assert (
+count_actual = df_vessel_selected.where("end_date > current_date()").count()
+assert (  # noqa: S101
     count_expected == count_actual
 ), f"Expected: {count_expected}, actual: {count_actual}"
 
@@ -1208,14 +1230,23 @@ assert (
 
 # COMMAND ----------
 
-df_vessel_selected.write.clusterBy("vessel_id", "start_date", "end_date").mode(
-    "overwrite"
-).saveAsTable(name=FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL)
+# Write historical table
+(
+    df_vessel_selected.write.clusterBy("vessel_id", "start_date", "end_date")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable(name=FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL)
+)
 
 # COMMAND ----------
 
-df_vessel_selected.where("end_date > current_date()").drop(
-    "start_date", "end_date"
-).write.clusterBy("vessel_id").mode("overwrite").saveAsTable(
-    name=FULL_TABLE_NAME_MARU_VESSEL_CURRENT
+# Write current table
+(
+    spark.table(FULL_TABLE_NAME_MARU_VESSEL_HISTORICAL)
+    .where("end_date > current_date()")
+    .drop("start_date", "end_date")
+    .write.clusterBy("vessel_id")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable(name=FULL_TABLE_NAME_MARU_VESSEL_CURRENT)
 )

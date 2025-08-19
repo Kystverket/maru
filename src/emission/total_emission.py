@@ -3,11 +3,10 @@ from pyspark.sql.functions import coalesce, lit
 
 
 def total_emission(df: DataFrame, engines: list, emissions: list) -> DataFrame:
-    """
-    Sum main, aux, and boiler components into a total
+    """Sum main, aux, and boiler components into a total.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         input PySpark DataFrame with columns for each engine, component, and emission.
 
@@ -18,11 +17,11 @@ def total_emission(df: DataFrame, engines: list, emissions: list) -> DataFrame:
         list of strings with names of the emissions to calculate totals for, e.g. ['co2', 'nox', 'sox']
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         PySpark DataFrame with the same schema as the input DataFrame, with additional columns for total fuel usage and total emissions for the given engines and emissions.
-    """
 
+    """
     for emission in emissions:
         columns_to_sum = [f"{emission}_{engine}_tonnes" for engine in engines]
         df = df.withColumn(
@@ -31,7 +30,7 @@ def total_emission(df: DataFrame, engines: list, emissions: list) -> DataFrame:
         )
 
     df = df.withColumn(
-        "fuel_tonnes",
+        "fuel_main_aux_boiler_engines_tonnes",
         sum(coalesce(df[f"{engine}_fuel_tonnes"], lit(0)) for engine in engines),
     )
 

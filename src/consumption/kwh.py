@@ -6,8 +6,8 @@ REDUCE_FACT_OTHER = 3 / 4
 
 
 def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
-    """
-    Calculate main engine load factor.
+    """Calculate main engine load factor.
+
     We estimate main engine load using service speed and phases.
 
     Following phases exist:
@@ -24,13 +24,12 @@ def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
     df : pyspark.sql.dataframe.DataFrame
         Spark DataFrame containing the data to be analyzed.
 
-    Returns
+    Returns:
     -------
     df : pyspark.sql.dataframe.DataFrame
         DataFrame with a new calculated "main_engine_load_factor" column added.
 
     """
-
     # The load factor represents the estimated engine load as a percentage (0-100%).
     # It is calculated using the ship's current speed (from AIS data) and its registered service speed from ship registers.
     # As according to IMO4, the speed ratio exponent is assumed to be 3.
@@ -39,7 +38,8 @@ def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
         ((df["speed_over_ground"] / df["speed_service"]) ** 3),
     )
 
-    # We assume engine load never to exceed 98 %:
+    # We assume engine load never to exceed 98 %.
+    # As according to the fourth IMO GHG study: In the particular case where the main engine load factor is still above 100% MCR then the bottom-up model assigns to this case a load factor of 98% MCR:
     df = df.withColumn(
         "main_engine_load_factor",
         when(df["main_engine_load_factor"] < 0, 0)
@@ -73,8 +73,8 @@ def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
 
 
 def calculate_main_engine_kwh(df: DataFrame) -> DataFrame:
-    """
-    Calculate energy consumption for main engine in kwh.
+    """Calculate energy consumption for main engine in kwh.
+
     To calculate energy consumption for main engine in kwh, we multiply the main engine load factor with the main engine installed power (kw) and the operation time in seconds. According to IMO GHG 4th, the service speed normally is achieved when the main engine run at about 85 % load. Therefore, a factor of 0.85 is multiplied with the installed power.
 
     Parameters
@@ -82,12 +82,12 @@ def calculate_main_engine_kwh(df: DataFrame) -> DataFrame:
     df : pyspark.sql.dataframe.DataFrame
         Spark DataFrame containing the data to be analyzed.
 
-    Returns
+    Returns:
     -------
     df : pyspark.sql.dataframe.DataFrame
         DataFrame with a new calculated "main_engine_kw" column added.
-    """
 
+    """
     df = df.withColumn(
         "main_engine_kwh",
         df["main_engine_load_factor"]
@@ -101,8 +101,7 @@ def calculate_main_engine_kwh(df: DataFrame) -> DataFrame:
 
 
 def calculate_aux_boiler_kwh(df: DataFrame) -> DataFrame:
-    """
-    Calculating aux engine kwh demand based on input table from IMO GHG based on phases.
+    """Calculate aux engine kwh demand based on input table from IMO GHG based on phases.
 
     Following phases exist:
     - a: anchor
@@ -118,12 +117,12 @@ def calculate_aux_boiler_kwh(df: DataFrame) -> DataFrame:
     df : pyspark.sql.dataframe.DataFrame
         Spark DataFrame containing the data to be analyzed.
 
-    Returns
+    Returns:
     -------
     df : pyspark.sql.dataframe.DataFrame
         DataFrame with new calculated "aux_kwh" and "boiler_kwh" columns added.
-    """
 
+    """
     # Set default values for kwh:
     df = df.withColumn("aux_kwh", lit(0))
     df = df.withColumn("boiler_kwh", lit(0))
@@ -259,5 +258,30 @@ def calculate_aux_boiler_kwh(df: DataFrame) -> DataFrame:
             (df["main_engine_kw"] > 0) & (df["main_engine_kw"] <= 150), lit(0)
         ).otherwise(df["boiler_kwh"]),
     )
+
+    return df
+
+
+def calculate_energy_consumption(df: DataFrame) -> DataFrame:
+    """Calculate energy consumption in kWh.
+
+    Parameters
+    ----------
+    df: DataFrame
+        A PySpark DataFrame.
+
+    Returns:
+    -------
+    pyspark.sql.DataFrame
+
+    """
+    # Main engine load
+    df = calculate_main_engine_load_factor(df)
+
+    # Main engine kWh
+    df = calculate_main_engine_kwh(df)
+
+    # Aux and boiler kWh
+    df = calculate_aux_boiler_kwh(df)
 
     return df

@@ -4,6 +4,7 @@ import sys
 
 sys.path.append(os.path.abspath("../../../"))
 ENV: str = os.getenv("ENVIRONMENT")
+
 # COMMAND ----------
 
 import pyspark.sql.functions as F
@@ -16,10 +17,8 @@ from utilities.transformers.common import add_processing_timestamp
 
 # COMMAND ----------
 
-CATALOG_DESTINATION = f"silver_{ENV}"
-SCHEMA_DESTINATION = "maru"
-TABLE_NAME_VESSEL_AUX_BOILER_KW_BRONZE = f"bronze_{ENV}.maru.vessel_aux_boiler_kw"
-TABLE_NAME_VESSEL_AUX_BOILER_KW_SILVER = f"silver_{ENV}.maru.vessel_aux_boiler_kw"
+TABLE_NAME_SOURCE = f"silver_{ENV}.dataverse.cr944_maru_hovedtabells"
+TABLE_NAME_DESTINATION = f"gold_{ENV}.maru.vessel_aux_boiler_kw"
 
 # COMMAND ----------
 
@@ -29,7 +28,31 @@ UNKNOWN_UNIT_VALUE_HIGH_LIMIT = 0
 
 # COMMAND ----------
 
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG_DESTINATION}.{SCHEMA_DESTINATION}")
+# MAGIC %md #Setup
+
+# COMMAND ----------
+
+spark.sql(
+    f"""
+CREATE TABLE IF NOT EXISTS gold_{ENV}.maru.vessel_aux_boiler_kw (
+  vessel_type STRING COMMENT 'Type of vessel',
+  unit STRING COMMENT 'Unit of measurement',
+  low_limit INT COMMENT 'Lower limit of the size bin',
+  high_limit INT COMMENT 'Upper limit of the size bin',
+  size_bin INT COMMENT 'Size bin category',
+  aux_berth_kw INT COMMENT 'Auxiliary power at berth in kW',
+  aux_anchor_kw INT COMMENT 'Auxiliary power at anchor in kW',
+  aux_maneuver_kw INT COMMENT 'Auxiliary power during maneuvering in kW',
+  aux_cruise_kw INT COMMENT 'Auxiliary power during cruising in kW',
+  boiler_berth_kw INT COMMENT 'Boiler power at berth in kW',
+  boiler_anchor_kw INT COMMENT 'Boiler power at anchor in kW',
+  boiler_maneuver_kw INT COMMENT 'Boiler power during maneuvering in kW',
+  boiler_cruise_kw INT COMMENT 'Boiler power during cruising in kW',
+  bi_processing_time TIMESTAMP COMMENT 'Last processing timestamp'
+)
+COMMENT 'Table containing auxiliary and boiler power data for different vessel types'
+"""
+)
 
 # COMMAND ----------
 
@@ -37,14 +60,23 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG_DESTINATION}.{SCHEMA_DESTINATIO
 
 # COMMAND ----------
 
-df = spark.table(TABLE_NAME_VESSEL_AUX_BOILER_KW_BRONZE)
+df = spark.table(TABLE_NAME_SOURCE).where("cr944_datasource ='vessel_aux_boiler_kw'")
 
-# Keep only latest record from bronze:
-window_latest_data = Window.orderBy(F.col("bi_ingested_timestamp").desc())
-df = (
-    df.withColumn("rank_processing_time", F.dense_rank().over(window_latest_data))
-    .where("rank_processing_time = 1 AND vessel_type IS NOT NULL")
-    .drop("rank_processing_time")
+# COMMAND ----------
+
+df = df.select(
+    F.col("cr944_vesseltype").alias("vessel_type"),
+    F.col("cr944_unit").alias("unit"),
+    F.col("cr944_lowlim").alias("low_limit"),
+    F.col("cr944_highlim").alias("high_limit"),
+    F.col("cr944_auxberth").alias("aux_berth_kw"),
+    F.col("cr944_auxanchor").alias("aux_anchor_kw"),
+    F.col("cr944_auxmaneuver").alias("aux_maneuver_kw"),
+    F.col("cr944_auxcruise").alias("aux_cruise_kw"),
+    F.col("cr944_boilerberth").alias("boiler_berth_kw"),
+    F.col("cr944_boileranchor").alias("boiler_anchor_kw"),
+    F.col("cr944_boilermaneuver").alias("boiler_maneuver_kw"),
+    F.col("cr944_boilercruise").alias("boiler_cruise_kw"),
 )
 
 # COMMAND ----------
@@ -53,22 +85,10 @@ df = (
 
 # COMMAND ----------
 
-# DBTITLE 1,Renaming
-df = (
-    df.withColumnRenamed("boiler_berth", "boiler_berth_kw")
-    .withColumnRenamed("boiler_anchor", "boiler_anchor_kw")
-    .withColumnRenamed("boiler_maneuver", "boiler_maneuver_kw")
-    .withColumnRenamed("boiler_cruise", "boiler_cruise_kw")
-    .withColumnRenamed("aux_berth", "aux_berth_kw")
-    .withColumnRenamed("aux_anchor", "aux_anchor_kw")
-    .withColumnRenamed("aux_maneuver", "aux_maneuver_kw")
-    .withColumnRenamed("aux_cruise", "aux_cruise_kw")
-)
+# DBTITLE 1,Add size bin column
+window_size_bin = Window.partitionBy(F.col("vessel_type")).orderBy(F.col("low_limit"))
 
-# COMMAND ----------
-
-# DBTITLE 1,Remove null values
-df = df.dropna(how="all")
+df = df.withColumn("size_bin", F.row_number().over(window_size_bin))
 
 # COMMAND ----------
 
@@ -93,7 +113,7 @@ df = df.withColumn(
 
 # DBTITLE 1,Create size_bin group 0 to account for missing vessel data
 # Create a new size_bin group (0) for each vessel_type. Fill this with UNKNOWN values for low_limit and hig_lim
-df_unknown_unit = df.groupBy(["vessel_type", "vessel_type_id", "unit"]).agg(
+df_unknown_unit = df.groupBy(["vessel_type", "unit"]).agg(
     F.lit(UNKNOWN_UNIT_VALUE_LOW_LIMIT).alias("low_limit"),
     F.lit(UNKNOWN_UNIT_VALUE_HIGH_LIMIT).alias("high_limit"),
     F.lit(0).alias("size_bin"),
@@ -126,5 +146,4 @@ df = add_processing_timestamp(df)
 
 # COMMAND ----------
 
-
-df.write.mode("overwrite").saveAsTable(name=TABLE_NAME_VESSEL_AUX_BOILER_KW_SILVER)
+df.write.mode("overwrite").saveAsTable(name=TABLE_NAME_DESTINATION)
