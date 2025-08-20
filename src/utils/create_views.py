@@ -9,7 +9,7 @@ spark.sql(
     f"""
 CREATE OR REPLACE VIEW gold_{ENV}.maru.v_municipality_voyage_route_top_100 AS
 WITH tmp_sails AS (
-SELECT 
+SELECT
     sail_id,
     municipality_voyage_route,
     vessel_type,
@@ -17,22 +17,23 @@ SELECT
     MIN(year_month) AS year_month_start,
     SUM(sum_seconds) AS sum_seconds,
     SUM(sum_kwh) AS sum_kwh,
-    SUM(sum_fuel) AS sum_fuel,
-    SUM(sum_co2) AS sum_co2,
-    SUM(sum_nmvoc) AS sum_nmvoc,
-    SUM(sum_co) AS sum_co,
-    SUM(sum_ch4) AS sum_ch4,
-    SUM(sum_n2o) AS sum_n2o,
-    SUM(sum_sox) AS sum_sox,
-    SUM(sum_pm10) AS sum_pm10,
-    SUM(sum_pm2_5) AS sum_pm2_5,
-    SUM(sum_nox) AS sum_nox,
-    SUM(sum_bc) AS sum_bc,
-    SUM(sum_co2e) AS sum_co2e,
+    SUM(sum_fuel_main_aux_boiler_engines_tonnes) AS sum_fuel_main_aux_boiler_engines_tonnes,
+    SUM(sum_fuel_mdo_equivalent_tonnes) AS sum_fuel_mdo_equivalent_tonnes,
+    SUM(sum_co2_tonnes) AS sum_co2_tonnes,
+    SUM(sum_nmvoc_tonnes) AS sum_nmvoc_tonnes,
+    SUM(sum_co_tonnes) AS sum_co_tonnes,
+    SUM(sum_ch4_tonnes) AS sum_ch4_tonnes,
+    SUM(sum_n2o_tonnes) AS sum_n2o_tonnes,
+    SUM(sum_sox_tonnes) AS sum_sox_tonnes,
+    SUM(sum_pm10_tonnes) AS sum_pm10_tonnes,
+    SUM(sum_pm2_5_tonnes) AS sum_pm2_5_tonnes,
+    SUM(sum_nox_tonnes) AS sum_nox_tonnes,
+    SUM(sum_bc_tonnes) AS sum_bc_tonnes,
+    SUM(sum_co2e_tonnes) AS sum_co2e_tonnes,
     SUM(distance_kilometers) AS distance_kilometers
 FROM gold_{ENV}.maru.dm_maru_report
 WHERE municipality_voyage_route IS NOT NULL
-  AND version IN ("v1.5.0")
+  AND version IN ("v1.7.0")
   AND in_coast_and_sea_area = true
   AND year_month < date_format(current_date(), "yyyy-MM")
 GROUP BY ALL
@@ -41,8 +42,8 @@ GROUP BY ALL
 ,tmp_ranked_routes AS (
   SELECT
     municipality_voyage_route,
-    sum(sum_co2e) as co2e_route_total,
-    row_number() OVER (ORDER BY sum(sum_co2e) DESC) as rank
+    SUM(sum_co2e_tonnes) as co2e_route_total,
+    ROW_NUMBER() OVER (ORDER BY SUM(sum_co2e_tonnes) DESC) as rank
   FROM tmp_sails
   GROUP BY municipality_voyage_route
   ORDER BY co2e_route_total DESC
@@ -60,18 +61,19 @@ SELECT
   COUNT(DISTINCT sail_id) AS count_sails,
   SUM(sum_seconds) AS sum_seconds,
   SUM(sum_kwh) AS sum_kwh,
-  SUM(sum_fuel) AS sum_fuel,
-  ROUND(SUM(sum_co2), 4) as sum_co2,
-  ROUND(SUM(sum_nmvoc), 4) as sum_nmvoc,
-  ROUND(SUM(sum_co), 4) as sum_co,
-  ROUND(SUM(sum_ch4), 4) as sum_ch4,
-  ROUND(SUM(sum_n2o), 4) as sum_n2o,
-  ROUND(SUM(sum_sox), 4) as sum_sox,
-  ROUND(SUM(sum_pm10), 4) as sum_pm10,
-  ROUND(SUM(sum_pm2_5), 4) as sum_pm2_5,
-  ROUND(SUM(sum_nox), 4) as sum_nox,
-  ROUND(SUM(sum_bc), 4) as sum_bc,
-  ROUND(SUM(sum_co2e), 4) as sum_co2e,
+  SUM(sum_fuel_main_aux_boiler_engines_tonnes) AS sum_fuel_main_aux_boiler_engines_tonnes,
+  SUM(sum_fuel_mdo_equivalent_tonnes) AS sum_fuel_mdo_equivalent_tonnes,
+  ROUND(SUM(sum_co2_tonnes), 4) as sum_co2_tonnes,
+  ROUND(SUM(sum_nmvoc_tonnes), 4) as sum_nmvoc_tonnes,
+  ROUND(SUM(sum_co_tonnes), 4) as sum_co_tonnes,
+  ROUND(SUM(sum_ch4_tonnes), 4) as sum_ch4_tonnes,
+  ROUND(SUM(sum_n2o_tonnes), 4) as sum_n2o_tonnes,
+  ROUND(SUM(sum_sox_tonnes), 4) as sum_sox_tonnes,
+  ROUND(SUM(sum_pm10_tonnes), 4) as sum_pm10_tonnes,
+  ROUND(SUM(sum_pm2_5_tonnes), 4) as sum_pm2_5_tonnes,
+  ROUND(SUM(sum_nox_tonnes), 4) as sum_nox_tonnes,
+  ROUND(SUM(sum_bc_tonnes), 4) as sum_bc_tonnes,
+  ROUND(SUM(sum_co2e_tonnes), 4) as sum_co2e_tonnes,
   SUM(distance_kilometers) AS distance_kilometers
 FROM tmp_sails sails
 INNER JOIN tmp_ranked_routes routes ON sails.municipality_voyage_route = routes.municipality_voyage_route
@@ -84,7 +86,7 @@ GROUP BY ALL
 spark.sql(
     f"""
 CREATE OR REPLACE VIEW gold_{ENV}.maru.v_maru_report AS
-SELECT 
+SELECT
       mmsi,
       vessel_id,
       year,
@@ -109,22 +111,26 @@ SELECT
       in_norwegian_continental_shelf,
       version,
       SUM(sum_seconds) as sum_seconds,
-      SUM(sum_kwh) as sum_kwh,
-      SUM(sum_fuel) as sum_fuel,
-      ROUND(SUM(sum_co2), 4) as sum_co2,
-      ROUND(SUM(sum_nmvoc), 4) as sum_nmvoc,
-      ROUND(SUM(sum_co), 4) as sum_co,
-      ROUND(SUM(sum_ch4), 4) as sum_ch4,
-      ROUND(SUM(sum_n2o), 4) as sum_n2o,
-      ROUND(SUM(sum_sox), 4) as sum_sox,
-      ROUND(SUM(sum_pm10), 4) as sum_pm10,
-      ROUND(SUM(sum_pm2_5), 4) as sum_pm2_5,
-      ROUND(SUM(sum_nox), 4) as sum_nox,
-      ROUND(SUM(sum_bc), 4) as sum_bc,
-      ROUND(SUM(sum_co2e), 4) as sum_co2e,
+      ROUND(SUM(sum_kwh), 4) as sum_kwh,
+      ROUND(SUM(sum_kwh_battery), 4) as sum_kwh_battery,
+      ROUND(SUM(sum_aux_kwh_shore_power), 4) as sum_aux_kwh_shore_power,
+      ROUND(SUM(sum_boiler_kwh_shore_power), 4) as sum_boiler_kwh_shore_power,
+      ROUND(SUM(sum_fuel_main_aux_boiler_engines_tonnes), 4) as sum_fuel_main_aux_boiler_engines_tonnes,
+      ROUND(SUM(sum_fuel_mdo_equivalent_tonnes), 4) as sum_fuel_mdo_equivalent_tonnes,
+      ROUND(SUM(sum_co2_tonnes), 4) as sum_co2_tonnes,
+      ROUND(SUM(sum_nmvoc_tonnes), 4) as sum_nmvoc_tonnes,
+      ROUND(SUM(sum_co_tonnes), 4) as sum_co_tonnes,
+      ROUND(SUM(sum_ch4_tonnes), 4) as sum_ch4_tonnes,
+      ROUND(SUM(sum_n2o_tonnes), 4) as sum_n2o_tonnes,
+      ROUND(SUM(sum_sox_tonnes), 4) as sum_sox_tonnes,
+      ROUND(SUM(sum_pm10_tonnes), 4) as sum_pm10_tonnes,
+      ROUND(SUM(sum_pm2_5_tonnes), 4) as sum_pm2_5_tonnes,
+      ROUND(SUM(sum_nox_tonnes), 4) as sum_nox_tonnes,
+      ROUND(SUM(sum_bc_tonnes), 4) as sum_bc_tonnes,
+      ROUND(SUM(sum_co2e_tonnes), 4) as sum_co2e_tonnes,
       SUM(distance_kilometers) as distance_kilometers
 FROM gold_{ENV}.maru.dm_maru_report
-WHERE version IN ("v1.5.0")
+WHERE version IN ("v1.7.0")
     AND in_coast_and_sea_area = true
     AND year_month < date_format(current_date(), "yyyy-MM")
 GROUP BY ALL

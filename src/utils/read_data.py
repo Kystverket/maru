@@ -9,31 +9,29 @@ spark = SparkSession.builder.getOrCreate()
 
 
 def read_feature_values(date_variables: date, table_name: str) -> DataFrame:
-    """
-    Read feature variables to a dataframe.
+    """Read feature variables to a dataframe.
+
     Filter the dataframe for date between df.start_date and df_end_date, so only active variables to be shown.
     The dataframe is also filtered on unique values, to account for duplicated data.
 
-    Parameters:
-    -----------
-    date: date
+    Parameters
+    ----------
+    date_variables: date
         Cut-off date for variables. Each variable has a start_date and end_date.
 
     table_name: str
         Full table name
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A DataFrame containing variables and value.
-    """
 
+    """
     df = spark.table(table_name)
 
     # Filter records for input date
-    df = df.filter(
-        df["__END_AT"].isNull()
-    ).filter(  # get the newest / current row from scd2 table
+    df = df.where(
         (df["start_date"] <= date_variables)
         & ((df["end_date"] >= date_variables) | (df["end_date"].isNull()))
     )
@@ -41,22 +39,21 @@ def read_feature_values(date_variables: date, table_name: str) -> DataFrame:
     # Keep only one record per variable:
     w = Window().partitionBy("variable").orderBy(desc("start_date"))
     df = df.withColumn("row_number", row_number().over(w))
-    df = df.filter(df["row_number"] == 1).drop(df["row_number"])
+    df = df.where(df["row_number"] == 1).drop(df["row_number"])
 
     return df
 
 
 def create_variables_dictionary(df: DataFrame) -> DataFrame:
-    """
-    Creates a dictionary of variables and their corresponding values from a DataFrame.
+    """Create a dictionary of variables and their corresponding values from a DataFrame.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.dataframe.DataFrame
         A DataFrame containing 'variable' and 'value' columns.
 
     Returns:
-    --------
+    -------
     var: dict
         A dictionary where keys are variable names and values are their corresponding values.
 
@@ -68,21 +65,20 @@ def create_variables_dictionary(df: DataFrame) -> DataFrame:
     return var
 
 
-def read_vessel_data_silver(table_name: str) -> DataFrame:
-    """
-    Reads vessel data from the Silver Lake in Delta Lake format and extracts relevant columns.
+def read_vessel_data(table_name: str) -> DataFrame:
+    """Read vessel data and extracts relevant columns.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     table_name: str
         Full table name (catalog.schema.table)
 
     Returns:
-    --------
+    -------
     pyspark.sql.dataframe.DataFrame
         A DataFrame with the relevant vessel data.
-    """
 
+    """
     df = spark.read.table(table_name)
 
     columns = [
@@ -122,11 +118,10 @@ def read_vessel_data_silver(table_name: str) -> DataFrame:
 def read_ais_voyages(
     table_name: str, ais_from_date: date, ais_to_date: date
 ) -> DataFrame:
-    """
-    Reads AIS data from a Delta file.
+    """Read AIS data from a Delta file.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     table_name: str
         Full table name (catalog.schema.table)
 
@@ -137,35 +132,32 @@ def read_ais_voyages(
         The ending date/time for the filter to be applied on date_time_utc in the format 'YYYY-MM-DD HH:mm:ss'.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
          A DataFrame with the selected AIS data.
-    """
 
+    """
     df = (
         spark.read.table(table_name)
-        .filter((col("date_utc") >= ais_from_date) & (col("date_utc") <= ais_to_date))
+        .where((col("date_utc") >= ais_from_date) & (col("date_utc") <= ais_to_date))
         .select(
-            "id",
             "vessel_id",
             "mmsi",
+            "imo",
+            "ship_name",
+            "call_sign",
             "date_time_utc",
+            "date_utc",
             "hex_14",
             "sail_id",
             "geometry_wkt",
             "speed_over_ground",
             "phase",
             "sail_time_remaining_seconds",
-            "delta_previous_point_seconds",
+            col("delta_previous_point_seconds")
+            .cast("bigint")
+            .alias("delta_previous_point_seconds"),
             "distance_previous_point_meters",
-            "new_ship_rep_location_id",
-            "new_ship_rep_location_name",
-            "unlocode_country_code",
-            "unlocode_location_code",
-            "unlocode_city",
-            "country_start",
-            "country_end",
-            "voyage_type",
             "in_coast_and_sea_area",
             "ais_public_data",
             "ship_is_stopped",

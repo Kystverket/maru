@@ -3,11 +3,10 @@ from pyspark.sql.functions import lit, when
 
 
 def set_fuel_sulfur_fraction_global(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the global fuel sulfur fraction for each observation in a DataFrame.
+    """Set the global fuel sulfur fraction for each observation in a DataFrame.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.dataframe.DataFrame
         The input DataFrame with column main_engine_fueltype.
 
@@ -16,11 +15,11 @@ def set_fuel_sulfur_fraction_global(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A DataFrame with the added 'fuel_sulfur_fraction_global' column.
-    """
 
+    """
     df = df.withColumn(
         "fuel_sulfur_fraction_global",
         when(
@@ -38,13 +37,12 @@ def set_fuel_sulfur_fraction_global(df: DataFrame, var: dict) -> DataFrame:
 
 
 def set_fuel_sulfur_fraction_eca(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the fuel sulfur fraction for each observation in a DataFrame if the area is
-    an ECA (Emission Control Area). The fuel sulfur fraction is set to a fixed value
-    defined in var["fuel_sulfur_fraction_eca"].
+    """Set the fuel sulfur fraction for each observation in a DataFrame if the area is an ECA (Emission Control Area).
 
-    Parameters:
-    -----------
+    The fuel sulfur fraction is set to a fixed value defined in var["fuel_sulfur_fraction_eca"].
+
+    Parameters
+    ----------
     df: pyspark.sql.dataframe.DataFrame
         The input DataFrame.
 
@@ -53,11 +51,11 @@ def set_fuel_sulfur_fraction_eca(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A DataFrame with the added 'fuel_sulfur_fraction_eca' column.
-    """
 
+    """
     df = df.withColumn("fuel_sulfur_fraction_eca", lit(var["fuel_sulfur_fraction_eca"]))
 
     return df

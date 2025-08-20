@@ -3,8 +3,7 @@ from pyspark.sql.functions import lit, when
 
 
 def set_sfc_main_engine_baseline(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the Specific Fuel Consumption (SFC) baseline for aux according to their fuel type.
+    """Set the Specific Fuel Consumption (SFC) baseline for aux according to their fuel type.
 
     This function expects a Spark DataFrame `df` as input and returns a new DataFrame with an additional column named `sfc_aux_baseline`.
 
@@ -19,13 +18,12 @@ def set_sfc_main_engine_baseline(df: DataFrame, var: dict) -> DataFrame:
         A dictionary containing input variables for different
         emission factors.
 
-    Returns
+    Returns:
     -------
     pyspark.sql.DataFrame
         New DataFrame with an additional column named `sfc_main_engine_baseline`.
 
     """
-
     df = df.withColumn(
         "sfc_main_engine_baseline",
         # Slow speed diesel (SSD):
@@ -206,8 +204,7 @@ def set_sfc_main_engine_baseline(df: DataFrame, var: dict) -> DataFrame:
 
 
 def set_sfc_pilot_fuel(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the pilot fuel factor for Specific Fuel Consumption (SFC) baseline.
+    """Set the pilot fuel factor for Specific Fuel Consumption (SFC) baseline.
 
     Reference: IMO GHG 4.study page 70(98):
     'It is assumed that the dual-fuel LNG engines always operate on LNG as their primary fuel while the mass of pilot fuel injected remains constant across engine loads.'
@@ -221,13 +218,12 @@ def set_sfc_pilot_fuel(df: DataFrame, var: dict) -> DataFrame:
         A dictionary containing input variables for different
         emission factors.
 
-    Returns
+    Returns:
     -------
     pyspark.sql.DataFrame
         New DataFrame with an additional column named `sfc_pilot_fuel`.
 
     """
-
     df = df.withColumn(
         "sfc_pilot_fuel",
         # LNG (Liquified natural gas) Diesel:
@@ -241,15 +237,15 @@ def set_sfc_pilot_fuel(df: DataFrame, var: dict) -> DataFrame:
             (df["main_engine_enginetype"] == "LNG-Otto SS")
             & (df["year_of_build"] >= 2001),
             var["sfc_main_engine_lng_otto_ss_year_2001_2999_pilot_fuel"],
-        ).otherwise(lit(0)),
+        )
+        .otherwise(lit(0)),
     )
 
     return df
 
 
 def set_sfc_aux_baseline(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the Specific Fuel Consumption (SFC) baseline for aux according to their fuel type.
+    """Set the Specific Fuel Consumption (SFC) baseline for aux according to their fuel type.
 
     This function expects a Spark DataFrame `df` as input and returns a new DataFrame with an additional column named `sfc_aux_baseline`.
 
@@ -264,13 +260,12 @@ def set_sfc_aux_baseline(df: DataFrame, var: dict) -> DataFrame:
         A dictionary containing input variables for different
         emission factors.
 
-    Returns
+    Returns:
     -------
     pyspark.sql.DataFrame
         New DataFrame with an additional column named `sfc_aux_baseline`.
 
     """
-
     df = df.withColumn(
         "sfc_aux_baseline",
         when(
@@ -311,8 +306,7 @@ def set_sfc_aux_baseline(df: DataFrame, var: dict) -> DataFrame:
 
 
 def set_sfc_boiler_baseline(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the Specific Fuel Consumption (SFC) baseline for boilers according to their fuel type.
+    """Set the Specific Fuel Consumption (SFC) baseline for boilers according to their fuel type.
 
     This function expects a Spark DataFrame `df` as input and returns a new DataFrame with an additional column named `sfc_boiler_baseline`.
 
@@ -327,13 +321,12 @@ def set_sfc_boiler_baseline(df: DataFrame, var: dict) -> DataFrame:
         A dictionary containing input variables for different
         emission factors.
 
-    Returns
+    Returns:
     -------
     pyspark.sql.DataFrame
         New DataFrame with an additional column named `sfc_boiler_baseline`.
 
     """
-
     df = df.withColumn(
         "sfc_boiler_baseline",
         when(
@@ -351,8 +344,7 @@ def set_sfc_boiler_baseline(df: DataFrame, var: dict) -> DataFrame:
 
 
 def calculate_sfc_load(df: DataFrame) -> DataFrame:
-    """
-    Calculates the SFC (Specific Fuel Consumption) load based on SFC baseline and Load factor.
+    """Calculate the SFC (Specific Fuel Consumption) load based on SFC baseline and Load factor.
 
     The calculation is based on Equation 10 from the Fourth IMO GHG Study 2020. Annexes B.2:
 
@@ -378,13 +370,12 @@ def calculate_sfc_load(df: DataFrame) -> DataFrame:
         the SFC baselines calculated by the `set_sfc_main_engine_baseline`, `set_sfc_aux_baseline`, and `set_sfc_boiler_baseline`
         functions.
 
-    Returns
+    Returns:
     -------
     pyspark.sql.DataFrame
         New DataFrame with additional columns named `sfc_main_engine`, `sfc_aux`, and `sfc_boiler`.
 
     """
-
     df = (
         df.withColumn(
             "sfc_main_engine",

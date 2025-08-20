@@ -3,10 +3,9 @@ from pyspark.sql.functions import when
 
 
 def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataFrame:
-    """
-    Sets the PM (Particulate Matter) emission factors.
+    """Set the PM (Particulate Matter) emission factors.
 
-    The PM10’s EFe are a function of the fuel’s sulphur content and are therefore reduced when operating on lower
+    The PM10's EFe are a function of the fuel's sulphur content and are therefore reduced when operating on lower
     sulphur fuels (e.g. when operating in ECAs). For engines being fueled by HFO (Heavy Fuel Oil / Residual fuel) and MDO/MGO (Marine Fuel Oil / Distillate Fuel), the fourth IMO GHG study page 75 (103) estimates PM10 EFe based on the sulphur content reported in Table 22 (Global average fuel sulphur content in percentage) and by using the following formulas:
     - HFO (eq. 16): 1.35 + SFC * 7 * 0.02247 * (FUEL_SULPHUR_FRACTION - 0.0246)
     - MDO/MGO (eq. 17):  0.23 + SFC * 7 * 0.02247 * (FUEL_SULPHUR_FRACTION - 0.024)
@@ -15,9 +14,10 @@ def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataF
     Sulphur and 0.02247 reflects the proportion of the sulphur in the fuel that is converted to sulfate PM (US Office
     of Transportation Air Quality, 2020).
 
-    Parameters:
-    -----------
-    df: A PySpark DataFrame containing the following columns: 'main_engine_fueltype', 'sfc_me', 'sfc_aux', 'sfc_boiler', 'main_engine_enginetype', 'fuel_sulfur_fraction_global', 'fuel_sulfur_fraction_eca'.
+    Parameters
+    ----------
+    df: DataFrame
+        A PySpark DataFrame containing the following columns: 'main_engine_fueltype', 'sfc_me', 'sfc_aux', 'sfc_boiler', 'main_engine_enginetype', 'fuel_sulfur_fraction_global', 'fuel_sulfur_fraction_eca'.
 
     var: Dictionary
         A dictionary containing input variables for different emission factors
@@ -29,12 +29,12 @@ def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataF
         A list of areas, ie. eca and global
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame with additional columns representing the PM emission factor for each engine, as follows: pm_main_engine_global_factor, pm_main_engine_eca_factor, pm_aux_global_factor, pm_aux_eca_factor,
         pm_boiler_global_factor, pm_boiler_eca_factor: The PM emission factor in g/kWh for each engine.
-    """
 
+    """
     for engine in engines:
         for area in areas:
             equation_residual_fuel = 1.35 + df[f"sfc_{engine}"] * 7 * 0.02247 * (
@@ -91,21 +91,22 @@ def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataF
     return df
 
 
-def calculate_pm_10(df, engines):
-    """
-    Calculates PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less) emissions in `tonnes` for each engine type in the given DataFrame.
+def calculate_pm_10(df: DataFrame, engines: list) -> DataFrame:
+    """Calculate PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less) emissions in `tonnes` for each engine type in the given DataFrame.
 
-    Parameters:
-    -----------
-    df: A PySpark DataFrame containing the following columns: main_engine_kwh', 'aux_kwh', 'boiler_kwh', 'pm_main_engine_factor', 'pm_aux_factor', 'pm_boiler_factor'
+    Parameters
+    ----------
+    df: DataFrame
+        A PySpark DataFrame containing the following columns: main_engine_kwh', 'aux_kwh', 'boiler_kwh', 'pm_main_engine_factor', 'pm_aux_factor', 'pm_boiler_factor'
 
     engines: List[str]
         A list of engine types, ie. me, aux, boiler
 
     Returns:
-    --------
+    -------
     A PySpark DataFrame with additional columns representing the PM10 emission (in tonnes) for each engine type,
              as follows: pm10_main_engine_tonnes, pm10_aux_tonnes, pm10_boiler_tonnes: The PM10 emission in tonnes for the main engine, auxiliary engine, and boiler, respectively, based on the PM factor and power output for each engine type.
+
     """
     for engine in engines:
         pm_calculation = (
@@ -127,21 +128,21 @@ def calculate_pm_10(df, engines):
 
 
 def calculate_pm_2_5(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Calculate PM 2.5 (Particle pollution from fine particulates, 2.5 micrometers or less) in tonnes based on PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less)
+    """Calculate PM 2.5 (Particle pollution from fine particulates, 2.5 micrometers or less) in tonnes based on PM10 (Particulate Matter, particles with a diameter of 10 micrometres or less).
 
-    Parameters:
-    -----------
-    df: A PySpark DataFrame with added column for pm 2.5
+    Parameters
+    ----------
+    df: DataFrame
+        A PySpark DataFrame with added column for pm 2.5
 
     var: Dictionary
         A dictionary containing input variables for different emission factors
 
     Returns:
-    --------
+    -------
     A PySpark DataFrame with additional columns representing the PM2.5 emission (in tonnes) for each engine type
-    """
 
+    """
     df = df.withColumn("pm2_5_tonnes", df["pm10_main_engine_tonnes"] * var["pm_2_5"])
 
     return df

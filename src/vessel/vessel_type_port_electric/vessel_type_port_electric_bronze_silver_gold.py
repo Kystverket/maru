@@ -28,7 +28,7 @@ BRONZE_TABLE = f"bronze_{ENV}.maru.{SOURCE}"
 SILVER_TABLE = f"silver_{ENV}.maru.{SOURCE}"
 GOLD_TABLE = f"gold_{ENV}.maru.vessel_type_port_electric"
 
-TABLE_NAME_VESSEL_TYPE = f"silver_{ENV}.maru.vessel_type"
+TABLE_NAME_VESSEL_TYPE = f"gold_{ENV}.maru.vessel_type"
 TABLE_NAME_MUNICIPALITY = f"gold_{ENV}.area.municipality_historical"
 
 # COMMAND ----------

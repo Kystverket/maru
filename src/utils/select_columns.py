@@ -1,22 +1,28 @@
 from pyspark.sql import DataFrame
+from pyspark.sql.functions import col
 
 
 def select_maru_output_columns(df: DataFrame) -> DataFrame:
-    """
-    Selects a subset of columns from the input DataFrame.
+    """Select a subset of columns from the input DataFrame.
 
-    Parameters:
-    df (DataFrame): The input DataFrame.
+    Parameters
+    ----------
+    df: DataFrame
+        The input DataFrame.
 
     Returns:
+    -------
     DataFrame: The DataFrame with the selected columns.
-    """
 
+    """
     df = df.select(
-        "id",
-        "date_time_utc",
-        "mmsi",
         "vessel_id",
+        "mmsi",
+        "imo",
+        "ship_name",
+        "call_sign",
+        "date_time_utc",
+        "date_utc",
         "phase",
         "sail_id",
         "geometry_wkt",
@@ -25,15 +31,18 @@ def select_maru_output_columns(df: DataFrame) -> DataFrame:
         "management_plan_marine_areas_area_id",
         "maritime_borders_norwegian_economic_zone_id",
         "maritime_borders_norwegian_continental_shelf_id",
-        "shore_power_id",
         "municipality_id",
+        "degree_of_electrification",
+        "usage_percentage_vessel_port_electric",
         "in_coast_and_sea_area",
+        "shore_power_is_connected",
+        "shore_power_id",
         "electric_shore_power_at_berth_reduction_factor",
         "main_engine_load_factor",
         "main_engine_kwh",
         "aux_kwh",
         "boiler_kwh",
-        "fuel_tonnes",
+        "fuel_main_aux_boiler_engines_tonnes",
         "fuel_mdo_equivalent_tonnes",
         "bc_tonnes",
         "ch4_tonnes",
@@ -46,7 +55,9 @@ def select_maru_output_columns(df: DataFrame) -> DataFrame:
         "pm2_5_tonnes",
         "sox_tonnes",
         "co2e_tonnes",
-        "delta_previous_point_seconds",
+        col("delta_previous_point_seconds")
+        .cast("int")
+        .alias("delta_previous_point_seconds"),
         "distance_previous_point_meters",
         "bi_processing_time",
         "version",
@@ -56,16 +67,18 @@ def select_maru_output_columns(df: DataFrame) -> DataFrame:
 
 
 def select_vessel_columns(df: DataFrame) -> DataFrame:
-    """
-    Selects a subset of columns from the input DataFrame.
+    """Select a subset of columns from the input DataFrame.
 
-    Parameters:
-    df (DataFrame): The input DataFrame.
+    Parameters
+    ----------
+    df: DataFrame
+        The input DataFrame.
 
     Returns:
+    -------
     DataFrame: The DataFrame with the selected columns.
-    """
 
+    """
     df = df.select(
         "vessel_id",
         "vessel_type_maru",

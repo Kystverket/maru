@@ -3,11 +3,10 @@ from pyspark.sql.functions import when
 
 
 def set_ch4_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Sets the `ch4` (methane) factor (in g/kWh) for main engine.
+    """Set the `ch4` (methane) factor (in g/kWh) for main engine.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame)
         A PySpark DataFrame object containing containing the necessary columns: 'main_engine_enginetype', 'main_engine_fueltype'
 
@@ -16,11 +15,11 @@ def set_ch4_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame object with the CH4 factor values added as a new column.
-    """
 
+    """
     df = df.withColumn(
         "ch4_main_engine_factor",
         when(df["main_engine_fueltype"] == "Methanol", var["ch4_main_engine_methanol"])
@@ -58,11 +57,10 @@ def set_ch4_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
 
 
 def set_ch4_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFrame:
-    """
-    Sets the `ch4` (methane) factor in `g/kWh` for aux and boiler.
+    """Set the `ch4` (methane) factor in `g/kWh` for aux and boiler.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         A PySpark DataFrame object containing containing the necessary column  'main_engine_fueltype'
 
@@ -73,9 +71,10 @@ def set_ch4_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFr
         A list of engine types, ie. aux, boiler
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame object with the CH4 factor values added as a new column.
+
     """
     for engine in engines:
         df = df.withColumn(
@@ -95,15 +94,15 @@ def set_ch4_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFr
 
 
 def calculate_ch4(df: DataFrame, engines: list) -> DataFrame:
-    """
-    Calculates the `ch4` (methane) emission in tonnes for each engine type 'main_engine', 'aux', 'boiler', based on their
-    respective factors, i.e. 'ch4_main_engine_factor_kwh', 'ch4_aux_factor_kwh', 'ch4_boiler_factor_kwh', and the
-    energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
+    """Calculate the `ch4` (methane) emission in tonnes for each engine type 'main_engine', 'aux', 'boiler'.
+
+    The calculation is based on their respective factors, i.e. 'ch4_main_engine_factor_kwh', 'ch4_aux_factor_kwh', 'ch4_boiler_factor_kwh',
+    and the energy consumption of each engine in kWh, i.e. 'main_engine_kwh', 'aux_kwh', 'boiler_kwh',
     respectively. The calculation is based on the formula CH4_emission = factor * kWh_consumption / 1000.
     (g / kwh => divide by 1 000 000 to get tonnes)
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         A PySpark DataFrame object containing the data to be processed.
 
@@ -111,9 +110,10 @@ def calculate_ch4(df: DataFrame, engines: list) -> DataFrame:
         A list of engine types, ie. main_engine, aux, boiler
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         A PySpark DataFrame object with the CH4 emission values in tonnes.
+
     """
     for engine in engines:
         df = df.withColumn(

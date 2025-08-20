@@ -3,11 +3,10 @@ from pyspark.sql.functions import lit, when
 
 
 def low_load(df: DataFrame, var: dict) -> DataFrame:
-    """
-    Assign a low load factor to emissions when maine engine load factor (main_engine_load_factor) is below 20%.
+    """Assign a low load factor to emissions when maine engine load factor (main_engine_load_factor) is below 20%.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df: pyspark.sql.DataFrame
         The PySpark DataFrame containing the different emission columns (pm10_main_engine_tonnes, nox_main_engine_tonnes ect.)
 
@@ -16,11 +15,11 @@ def low_load(df: DataFrame, var: dict) -> DataFrame:
         emission factors.
 
     Returns:
-    --------
+    -------
     pyspark.sql.DataFrame
         The updated PySpark DataFrame with low load factors (pm10_main_engine_low_load_factor, nox_main_engine_low_load_factor etc.) and adjusted emission columns (pm10_main_engine_tonnes, nox_main_engine_tonnes ect.)
-    """
 
+    """
     emission_low_load_columns = [
         "pm10_main_engine",
         "nox_main_engine",

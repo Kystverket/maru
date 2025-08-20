@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import coalesce, col, lit, row_number, when, year
+from pyspark.sql.functions import coalesce, col, lit, row_number, when
 from pyspark.sql.window import Window
 from utilities.transformers.h3 import (
     H3_HEX_KRING_SHORE_POWER,
@@ -12,9 +12,8 @@ from utilities.transformers.h3 import (
 from utils.config import MUNICIPALITY_CURRENT_YEAR
 
 
-def get_areas():
-    """
-    Get a list of areas with their corresponding properties.
+def get_areas() -> list:
+    """Get a list of areas with their corresponding properties.
 
     Returns:
         list: A list of dictionaries representing the areas. Each dictionary contains the following keys:
@@ -24,6 +23,7 @@ def get_areas():
             - k_ring (bool): Indicates whether the area has k-rings.
             - window_id (str): The window ID for the area.
             - window_orderby_key (str): The window orderby key for the area.
+
     """
     areas = [
         {
@@ -92,8 +92,8 @@ def get_areas():
             "hex_resolution": H3_RESOLUTION_SHORE_POWER,
             "hex_krings": H3_HEX_KRING_SHORE_POWER,
             "select_expression": [
-                "bi_row_sha AS id",
-                "year",
+                "id",
+                "date_established",
                 "usage_percentage",
                 f"hex_kring_{H3_RESOLUTION_SHORE_POWER}_{H3_HEX_KRING_SHORE_POWER}",
                 f"hex_kring_distance_{H3_RESOLUTION_SHORE_POWER}_{H3_HEX_KRING_SHORE_POWER}",
@@ -107,8 +107,8 @@ def get_areas():
 
 
 def set_area_distance(df: DataFrame, close_to_power_cell: int) -> DataFrame:
-    """
-    Calculates distances between the AIS point and a set of areas based on H3 hexagonal grid coordinates.
+    """Calculate distances between the AIS point and a set of areas based on H3 hexagonal grid coordinates.
+
     This function also creates columns to flag proximity or belonging to certain areas of interest.
 
     H3 resolution is given by the name of hex column, where the first digit refers to the H3 resolution and the second to the amount of k-rings. Ie. `coast_norway_hex_kring_distance_9_12` has H3 resolution 9 and 12 k-rings.
@@ -123,7 +123,7 @@ def set_area_distance(df: DataFrame, close_to_power_cell: int) -> DataFrame:
     close_to_power_cell: int
         Maximum distance from a electric port for a vessel to be considered to be near one.
 
-    Returns
+    Returns:
     -------
     pyspark.sql.DataFrame
         A new DataFrame with additional columns:
@@ -171,8 +171,7 @@ def join_ais_area(
     h3_resolution: int,
     k_rings: int,
 ) -> DataFrame:
-    """
-    Join AIS data with area data based on H3 hexagonal grid coordinates and optional k-rings.
+    """Join AIS data with area data based on H3 hexagonal grid coordinates and optional k-rings.
 
     This function performs a left join operation between an AIS DataFrame and an area DataFrame. The join is based on
     H3 hexagonal grid coordinates, with support for k-rings if specified. Additionally, it applies a window function
@@ -196,12 +195,13 @@ def join_ais_area(
         The number of k-rings to consider for the join. If `k_rings` is greater than 0, the join will use k-ring
         specific columns. If `k_rings` is 0, a direct H3 hexagonal grid coordinate join is performed.
 
-    Returns
+    Returns:
     -------
     DataFrame
         A DataFrame resulting from the left join of `ais_df` and `area_df`, with duplicates removed based on the
         window specification and only the first row per partition kept. The resulting DataFrame includes AIS data
         enriched with area information.
+
     """
     window_spec = Window.partitionBy(window_id).orderBy(window_orderby_key)
 
@@ -211,7 +211,7 @@ def join_ais_area(
         # Shore power joined with H3 and greater or equal to year to get only valid installations
         h3_join_column = f"{name}_hex_kring_{h3_resolution}_{k_rings}"
         join_key = (ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]) & (
-            year(ais_df["date_time_utc"]) >= area_df["shore_power_year"]
+            ais_df["date_time_utc"] >= area_df["shore_power_date_established"]
         )
     elif k_rings:
         # Join with H3 k-ring if exist
@@ -229,7 +229,7 @@ def join_ais_area(
             how="left",
         )
         .withColumn("row_number", row_number().over(window_spec))
-        .filter(col("row_number") == 1)
+        .where(col("row_number") == 1)
         .drop("row_number")
         .drop(h3_join_column)
     )
