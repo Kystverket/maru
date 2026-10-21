@@ -2,14 +2,19 @@
 import os
 import sys
 
-sys.path.append(os.path.abspath("../../../"))
-ENV: str = os.getenv("ENVIRONMENT")
+sys.path.append(os.path.abspath("../../../../"))  # notebooks/
+sys.path.append(os.path.abspath("../../"))  # maru_v1_10/
+dbutils.widgets.text("ENVIRONMENT", "dev")
+ENV: str = dbutils.widgets.get("ENVIRONMENT")
+os.environ["ENVIRONMENT"] = ENV
+spark.conf.set("spark.sql.ansi.enabled", "false")
 
 # COMMAND ----------
 
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
 from utilities.transformers.common import add_processing_timestamp
+from utils.config import VERSION
 
 # COMMAND ----------
 
@@ -17,8 +22,8 @@ from utilities.transformers.common import add_processing_timestamp
 
 # COMMAND ----------
 
-TABLE_NAME_SOURCE = f"silver_{ENV}.dataverse.cr944_maru_hovedtabells"
-TABLE_NAME_DESTINATION = f"gold_{ENV}.maru.vessel_aux_boiler_kw"
+SOURCE_TABLE_FULL_PATH = f"silver_{ENV}.dataverse.cr944_maru_hovedtabells_v1"
+TARGET_TABLE_FULL_PATH = f"gold_{ENV}.maru.vessel_aux_boiler_kw_{VERSION}"
 
 # COMMAND ----------
 
@@ -34,7 +39,7 @@ UNKNOWN_UNIT_VALUE_HIGH_LIMIT = 0
 
 spark.sql(
     f"""
-CREATE TABLE IF NOT EXISTS gold_{ENV}.maru.vessel_aux_boiler_kw (
+CREATE TABLE IF NOT EXISTS {TARGET_TABLE_FULL_PATH} (
   vessel_type STRING COMMENT 'Type of vessel',
   unit STRING COMMENT 'Unit of measurement',
   low_limit INT COMMENT 'Lower limit of the size bin',
@@ -60,7 +65,9 @@ COMMENT 'Table containing auxiliary and boiler power data for different vessel t
 
 # COMMAND ----------
 
-df = spark.table(TABLE_NAME_SOURCE).where("cr944_datasource ='vessel_aux_boiler_kw'")
+df = spark.table(SOURCE_TABLE_FULL_PATH).where(
+    "cr944_datasource ='vessel_aux_boiler_kw'"
+)
 
 # COMMAND ----------
 
@@ -146,4 +153,4 @@ df = add_processing_timestamp(df)
 
 # COMMAND ----------
 
-df.write.mode("overwrite").saveAsTable(name=TABLE_NAME_DESTINATION)
+df.write.mode("overwrite").saveAsTable(name=TARGET_TABLE_FULL_PATH)

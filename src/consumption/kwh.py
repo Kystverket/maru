@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import lit, when
+from pyspark.sql.functions import col, least, lit, when
 
 REDUCE_FACT_TANKER = 1 / 3
 REDUCE_FACT_OTHER = 3 / 4
@@ -39,26 +39,14 @@ def calculate_main_engine_load_factor(df: DataFrame) -> DataFrame:
     )
 
     # We assume engine load never to exceed 98 %.
-    # As according to the fourth IMO GHG study: In the particular case where the main engine load factor is still above 100% MCR then the bottom-up model assigns to this case a load factor of 98% MCR:
+    # As according to the fourth IMO GHG study: In the particular case where the main engine load factor is still above 100% MCR then the bottom-up model assigns to this case a load factor of 98% MCR.
+    # Main engine load is also set to zero in node (n) and anchor (a) phases.
     df = df.withColumn(
         "main_engine_load_factor",
-        when(df["main_engine_load_factor"] < 0, 0)
+        when(df["phase"].isin("n", "a"), 0)
+        .when(df["main_engine_load_factor"] < 0, 0)
         .when(df["main_engine_load_factor"] > 0.98, 0.98)
         .otherwise(df["main_engine_load_factor"]),
-    )
-
-    # Main engine load is set to zero in the following cases:
-
-    # In node set main_engine_load_factor to zero
-    df = df.withColumn(
-        "main_engine_load_factor",
-        when(df["phase"] == "n", 0).otherwise(df["main_engine_load_factor"]),
-    )
-
-    # In anchor set main_engine_load_factor to zero
-    df = df.withColumn(
-        "main_engine_load_factor",
-        when(df["phase"] == "a", 0).otherwise(df["main_engine_load_factor"]),
     )
 
     # "Set some main_engine_load_factor on dp offshore."
@@ -93,8 +81,7 @@ def calculate_main_engine_kwh(df: DataFrame) -> DataFrame:
         df["main_engine_load_factor"]
         * df["main_engine_kw"]
         * 0.85
-        * df["delta_previous_point_seconds"]
-        / 3600,
+        * (df["delta_previous_point_seconds"] / 3600),
     )
 
     return df
@@ -124,139 +111,143 @@ def calculate_aux_boiler_kwh(df: DataFrame) -> DataFrame:
 
     """
     # Set default values for kwh:
-    df = df.withColumn("aux_kwh", lit(0))
-    df = df.withColumn("boiler_kwh", lit(0))
+    df = df.withColumns({"aux_kwh": lit(0), "boiler_kwh": lit(0)})
 
     # When anchor:
-    df = df.withColumn(
-        "aux_kwh",
-        when(
-            df["phase"] == "a",
-            df["aux_anchor_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["aux_kwh"]),
-    )
-
-    df = df.withColumn(
-        "boiler_kwh",
-        when(
-            df["phase"] == "a",
-            df["boiler_anchor_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["boiler_kwh"]),
+    df = df.withColumns(
+        {
+            "aux_kwh": when(
+                df["phase"] == "a",
+                df["aux_anchor_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(
+                df["phase"] == "a",
+                df["boiler_anchor_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["boiler_kwh"]),
+        }
     )
 
     # When dynamic positioning offshore (dp-o), fishing (f), aquacultur (aq) or maneuver (m) => maneuver:
-    df = df.withColumn(
-        "aux_kwh",
-        when(
-            df["phase"].isin(["aq", "dp-o", "f", "m"]),
-            df["aux_maneuver_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["aux_kwh"]),
-    )
-
-    df = df.withColumn(
-        "boiler_kwh",
-        when(
-            df["phase"].isin(["aq", "dp-o", "f", "m"]),
-            df["boiler_maneuver_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["boiler_kwh"]),
+    df = df.withColumns(
+        {
+            "aux_kwh": when(
+                df["phase"].isin(["aq", "dp-o", "f", "m"]),
+                df["aux_maneuver_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(
+                df["phase"].isin(["aq", "dp-o", "f", "m"]),
+                df["boiler_maneuver_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["boiler_kwh"]),
+        }
     )
 
     # When cruise:
-    df = df.withColumn(
-        "aux_kwh",
-        when(
-            df["phase"] == "c",
-            df["aux_cruise_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["aux_kwh"]),
-    )
-
-    df = df.withColumn(
-        "boiler_kwh",
-        when(
-            df["phase"] == "c",
-            df["boiler_cruise_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["boiler_kwh"]),
+    df = df.withColumns(
+        {
+            "aux_kwh": when(
+                df["phase"] == "c",
+                df["aux_cruise_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(
+                df["phase"] == "c",
+                df["boiler_cruise_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["boiler_kwh"]),
+        }
     )
 
     # When node:
-    df = df.withColumn(
-        "aux_kwh",
-        when(
-            df["phase"] == "n",
-            df["aux_berth_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["aux_kwh"]),
-    )
-
-    df = df.withColumn(
-        "boiler_kwh",
-        when(
-            df["phase"] == "n",
-            df["boiler_berth_kw"] * df["delta_previous_point_seconds"] / 3600,
-        ).otherwise(df["boiler_kwh"]),
+    df = df.withColumns(
+        {
+            "aux_kwh": when(
+                df["phase"] == "n",
+                df["aux_berth_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(
+                df["phase"] == "n",
+                df["boiler_berth_kw"] * (df["delta_previous_point_seconds"] / 3600),
+            ).otherwise(df["boiler_kwh"]),
+        }
     )
 
     # Reduce boiler / aux if in node for longer periods (high sail_time_remaining_seconds)
-
-    # Aux:
-    df = df.withColumn(
-        "aux_kwh",
-        when(
-            (df["phase"] == "n"),
-            when(
-                df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker")
-                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
-                df["aux_kwh"] * REDUCE_FACT_TANKER,
-            )
-            .when(
-                (~df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker"))
-                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
-                df["aux_kwh"] * REDUCE_FACT_OTHER,
-            )
-            .otherwise(df["aux_kwh"]),
-        ).otherwise(df["aux_kwh"]),
+    df = df.withColumns(
+        {
+            "aux_kwh": when(
+                (df["phase"] == "n"),
+                when(
+                    df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker")
+                    & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
+                    df["aux_kwh"] * REDUCE_FACT_TANKER,
+                )
+                .when(
+                    (~df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker"))
+                    & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
+                    df["aux_kwh"] * REDUCE_FACT_OTHER,
+                )
+                .otherwise(df["aux_kwh"]),
+            ).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(
+                (df["phase"] == "n"),
+                when(
+                    df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker")
+                    & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
+                    df["boiler_kwh"] * REDUCE_FACT_TANKER,
+                )
+                .when(
+                    (~df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker"))
+                    & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
+                    df["boiler_kwh"] * REDUCE_FACT_OTHER,
+                )
+                .otherwise(df["boiler_kwh"]),
+            ).otherwise(df["boiler_kwh"]),
+        }
     )
-    # Boiler:
-    df = df.withColumn(
-        "boiler_kwh",
-        when(
-            (df["phase"] == "n"),
-            when(
-                df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker")
-                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 2),
-                df["boiler_kwh"] * REDUCE_FACT_TANKER,
+
+    # Zero out aux and boiler for AIS Class B (static msg_type 24) vessels,
+    # except fishing vessels (Fiskefartøy).
+    # Class B transponders are typically on smaller vessels without
+    # significant auxiliary engine or boiler installations.
+    # msg_type_static comes from the vessel table; msg_type is the AIS position message type.
+    is_class_b_non_fishing = (col("msg_type_static") == 24) & (
+        ~col("vessel_type_maru").isin("Fiskefartøy")
+    )
+    df = df.withColumns(
+        {
+            "aux_kwh": when(is_class_b_non_fishing, lit(0)).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(is_class_b_non_fishing, lit(0)).otherwise(
+                df["boiler_kwh"]
+            ),
+        }
+    )
+
+    # When main engine power less than 500 kW,
+    # auxiliary engine is capped at 5% of main engine power
+    df = df.withColumns(
+        {
+            "aux_kwh": when(
+                df["main_engine_kw"] < 500,
+                least(
+                    df["aux_kwh"],
+                    df["main_engine_kw"]
+                    * 0.05
+                    * (df["delta_previous_point_seconds"] / 3600),
+                ),
+            ).otherwise(df["aux_kwh"]),
+            "boiler_kwh": when(
+                (df["main_engine_kw"] > 0) & (df["main_engine_kw"] <= 150),
+                lit(0),
             )
             .when(
-                (~df["vessel_type_maru"].isin("Gasstankskip", "Oljetanker"))
-                & (df["sail_time_remaining_seconds"] >= 3600 * 24 * 1),
-                df["boiler_kwh"] * REDUCE_FACT_OTHER,
+                df["main_engine_kw"] > 0,
+                least(
+                    df["boiler_kwh"],
+                    df["main_engine_kw"]
+                    * 0.4
+                    * (df["delta_previous_point_seconds"] / 3600),
+                ),
             )
             .otherwise(df["boiler_kwh"]),
-        ).otherwise(df["boiler_kwh"]),
-    )
-
-    # — when main engine power is between 0 and 150 kW then auxiliary engine and boiler are
-    # set to zero;
-    # — when main engine power is between 150 and 500 kW then the auxiliary engine is set to
-    # 5% of the main engine installed power while the boiler power output is based on Table
-    # 17;
-    # — when the main engine power is larger than 500 kW then the auxiliary engine and boiler
-    # values shown in Table 17 are used
-
-    df = df.withColumn(
-        "aux_kwh",
-        when((df["main_engine_kw"] > 0) & (df["main_engine_kw"] <= 150), lit(0))
-        .when(
-            (df["main_engine_kw"] > 150) & (df["main_engine_kw"] <= 500),
-            df["main_engine_kw"] * 0.05 * df["delta_previous_point_seconds"] / 3600,
-        )
-        .otherwise(df["aux_kwh"]),
-    )
-
-    df = df.withColumn(
-        "boiler_kwh",
-        when(
-            (df["main_engine_kw"] > 0) & (df["main_engine_kw"] <= 150), lit(0)
-        ).otherwise(df["boiler_kwh"]),
+        }
     )
 
     return df

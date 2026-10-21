@@ -213,7 +213,7 @@ def create_schema_and_table_if_not_exists(env: str, target_table: str) -> None:
     spark.sql(
         f"""
             CREATE TABLE IF NOT EXISTS {target_table} (
-                vessel_id INT COMMENT 'Identifier for the vessel',
+                vessel_id BIGINT COMMENT 'Identifier for the vessel (hash of mmsi, imo and call sign)',
                 mmsi INT COMMENT 'Maritime Mobile Service Identity',
                 imo INT COMMENT 'International Maritime Organization number - a unique ship identifier',
                 ship_name STRING COMMENT 'Name of the ship',
@@ -222,10 +222,11 @@ def create_schema_and_table_if_not_exists(env: str, target_table: str) -> None:
                 date_utc DATE COMMENT 'Date in UTC',
                 phase STRING COMMENT 'Current phase of the vessel',
                 sail_id BIGINT COMMENT 'Sail ID',
-                geometry_wkt STRING COMMENT 'Geometry in Well-Known Text format',
+                geometry GEOMETRY(4326) COMMENT 'Geometry in 4326-format',
                 hex_14 BIGINT COMMENT 'Hexadecimal representation',
                 degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
                 usage_percentage_vessel_port_electric DOUBLE COMMENT 'Percentage of shore power usage',
+                usage_percentage_vessel_type_port_electric DOUBLE COMMENT 'Percentage of shore power usage based on vessel type',
                 emission_control_area_id STRING COMMENT 'Emission control area identifier',
                 management_plan_marine_areas_area_id INT COMMENT 'Management plan marine areas area identifier',
                 maritime_borders_norwegian_economic_zone_id STRING COMMENT 'Norwegian economic zone identifier',
@@ -241,6 +242,7 @@ def create_schema_and_table_if_not_exists(env: str, target_table: str) -> None:
                 boiler_kwh DOUBLE COMMENT 'Boiler kWh',
                 fuel_main_aux_boiler_engines_tonnes DOUBLE COMMENT 'Fuel from main engine, aux and boiler in tonnes',
                 fuel_mdo_equivalent_tonnes DOUBLE COMMENT 'Fuel MDO (Marine diesel oil) equivalent in tonnes',
+                flag_speed_spike_in_sail_id BOOLEAN COMMENT 'Flag indicating speed spike in sail ID',
                 bc_tonnes DOUBLE COMMENT 'Black carbon in tonnes',
                 ch4_tonnes DOUBLE COMMENT 'Methane in tonnes',
                 co_tonnes DOUBLE COMMENT 'Carbon monoxide in tonnes',
@@ -253,7 +255,7 @@ def create_schema_and_table_if_not_exists(env: str, target_table: str) -> None:
                 sox_tonnes DOUBLE COMMENT 'Sulfur oxides in tonnes',
                 co2e_tonnes DOUBLE COMMENT 'CO2 equivalent in tonnes',
                 delta_previous_point_seconds INT COMMENT 'Seconds from previous AIS point',
-                distance_previous_point_meters FLOAT COMMENT 'Distance in meters from previous AIS point',
+                distance_previous_point_meters DOUBLE COMMENT 'Distance in meters from previous AIS point',
                 bi_processing_time TIMESTAMP COMMENT 'Last processing time',
                 version STRING COMMENT 'MarU version number'
             )

@@ -22,7 +22,7 @@ def create_table_if_not_exists(target_table: str) -> None:
     year SMALLINT COMMENT 'AIS timestamp casted to year',
     month TINYINT COMMENT 'AIS timestamp casted to month',
     year_month STRING COMMENT 'AIS timestamp casted to year-month',
-    vessel_id INT COMMENT 'Identifier for the vessel',
+    vessel_id BIGINT COMMENT 'Identifier for the vessel (hash of mmsi, imo and call sign)',
     mmsi INT COMMENT 'Maritime Mobile Service Identity',
     imo INT COMMENT 'International Maritime Organization number - a unique ship identifier',
     ship_name STRING COMMENT 'Name of the ship',
@@ -30,9 +30,10 @@ def create_table_if_not_exists(target_table: str) -> None:
     statcode5 STRING COMMENT 'Statcode5 code',
     shiptype_level5 STRING COMMENT 'Ship type level 5 classification',
     gt_group STRING COMMENT 'Grouping by gross tonnage',
-    gt FLOAT COMMENT 'Gross tonnage',
+    gt DOUBLE COMMENT 'Gross tonnage',
     vessel_type STRING COMMENT 'Type of the vessel',
     usage_percentage_vessel_port_electric DOUBLE COMMENT 'Percentage of shore power usage',
+    usage_percentage_vessel_type_port_electric DOUBLE COMMENT 'Percentage of shore power usage based on vessel type',
     degree_of_electrification DOUBLE COMMENT 'Degree of electrification',
     main_engine_fueltype STRING COMMENT 'Main engine fuel type',
     phase STRING COMMENT 'Phase of the voyage',
@@ -80,10 +81,8 @@ def create_table_if_not_exists(target_table: str) -> None:
     )
 
 
-def read_maru_raw_data(
-    table_name: str, from_date: str, to_date: str, maru_raw_version: str
-) -> DataFrame:
-    """Retrieve MARU raw data from a specified table within a date range and filter by version.
+def read_maru_raw_data(table_name: str, from_date: str, to_date: str) -> DataFrame:
+    """Retrieve MARU raw data from a specified table within a date range.
 
     Parameters
     ----------
@@ -95,8 +94,6 @@ def read_maru_raw_data(
         The start date for filtering the date_time_utc column (inclusive).
     to_date : str
         The end date for filtering the date_time_utc column (inclusive).
-    maru_raw_version : str
-        The version number to filter the data.
 
     Returns:
     -------
@@ -106,6 +103,7 @@ def read_maru_raw_data(
     """
     df = (
         spark.table(table_name)
+        .where(~F.col("flag_speed_spike_in_sail_id"))
         .select(
             "date_time_utc",
             "mmsi",
@@ -122,6 +120,7 @@ def read_maru_raw_data(
             "in_coast_and_sea_area",
             "degree_of_electrification",
             "usage_percentage_vessel_port_electric",
+            "usage_percentage_vessel_type_port_electric",
             "shore_power_is_connected",
             "electric_shore_power_at_berth_reduction_factor",
             "main_engine_kwh",
@@ -146,27 +145,21 @@ def read_maru_raw_data(
             (F.to_date(F.col("date_time_utc")) >= from_date)
             & (F.to_date(F.col("date_time_utc")) <= to_date)
         )
-        .where(F.col("version") == maru_raw_version)
-        .withColumn("year", F.date_format("date_time_utc", "yyyy").cast("smallint"))
-        .withColumn(
-            "county_id", F.left(F.col("municipality_id"), F.lit(2)).cast("string")
-        )
-        .withColumn(
-            "aux_kwh_shore_power",
-            F.col("aux_kwh")
-            * (1 - F.col("electric_shore_power_at_berth_reduction_factor")),
-        )
-        .withColumn(
-            "boiler_kwh_shore_power",
-            F.col("boiler_kwh")
-            * (1 - F.col("electric_shore_power_at_berth_reduction_factor")),
-        )
-        .withColumn(
-            "in_norwegian_continental_shelf",
-            F.when(
-                F.col("maritime_borders_norwegian_continental_shelf_id").isNotNull(),
-                True,
-            ).otherwise(False),
+        .withColumns(
+            {
+                "year": F.date_format("date_time_utc", "yyyy").cast("smallint"),
+                "county_id": F.left(F.col("municipality_id"), F.lit(2)).cast("string"),
+                "aux_kwh_shore_power": F.col("aux_kwh")
+                * (1 - F.col("electric_shore_power_at_berth_reduction_factor")),
+                "boiler_kwh_shore_power": F.col("boiler_kwh")
+                * (1 - F.col("electric_shore_power_at_berth_reduction_factor")),
+                "in_norwegian_continental_shelf": F.when(
+                    F.col(
+                        "maritime_borders_norwegian_continental_shelf_id"
+                    ).isNotNull(),
+                    True,
+                ).otherwise(False),
+            }
         )
     )
 
@@ -196,8 +189,9 @@ def read_ais_voyages_data(table_name: str, from_date: str, to_date: str) -> Data
     df = (
         spark.table(table_name)
         .select(
-            "date_time_utc",
+            F.col("vessel_id_hash").alias("vessel_id"),
             "mmsi",
+            "date_time_utc",
             "voyage_type",
             "delta_previous_point_seconds",
             "distance_previous_point_meters",
@@ -241,18 +235,19 @@ def calculate_municipality_emission_type(df: DataFrame) -> DataFrame:
 
     df = (
         # Generate columns for calculation
-        df.withColumn(
-            "municipality_id_start",
-            F.first("municipality_id").over(window_partitionby_sailid_orderby_datetime),
-        )
-        .withColumn(
-            "municipality_id_end",
-            F.last("municipality_id").over(window_partitionby_sailid_orderby_datetime),
-        )
-        .withColumn("sail_id_count", F.count("*").over(window_partitionby_sailid))
-        .withColumn(
-            "sail_id_municipality_count",
-            F.count("*").over(window_partitionby_sailid_municipalityid),
+        df.withColumns(
+            {
+                "municipality_id_start": F.first("municipality_id").over(
+                    window_partitionby_sailid_orderby_datetime
+                ),
+                "municipality_id_end": F.last("municipality_id").over(
+                    window_partitionby_sailid_orderby_datetime
+                ),
+                "sail_id_count": F.count("*").over(window_partitionby_sailid),
+                "sail_id_municipality_count": F.count("*").over(
+                    window_partitionby_sailid_municipalityid
+                ),
+            }
         )
         # Set municipality emission type
         .withColumn(
@@ -300,36 +295,31 @@ def calculate_municipality_voyage_route(df: DataFrame) -> DataFrame:
         .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
     )
 
-    df = (
-        df.withColumn(
-            "municipality_name_start",
-            F.first("municipality_name").over(
+    df = df.withColumns(
+        {
+            "municipality_name_start": F.first("municipality_name").over(
                 window_partitionby_sailid_orderby_datetime
             ),
-        )
-        .withColumn(
-            "municipality_name_end",
-            F.last("municipality_name").over(
+            "municipality_name_end": F.last("municipality_name").over(
                 window_partitionby_sailid_orderby_datetime
             ),
-        )
-        .withColumn(
-            "municipality_voyage_route",
-            F.when(
-                (F.col("municipality_id_start").isNotNull())
-                & (F.col("municipality_id_end").isNotNull())
-                & (F.col("municipality_id_start") != F.col("municipality_id_end")),
-                F.concat_ws(
-                    " - ",
-                    F.array_sort(
-                        F.array(
-                            F.col("municipality_name_start"),
-                            F.col("municipality_name_end"),
-                        )
-                    ),
+        }
+    ).withColumn(
+        "municipality_voyage_route",
+        F.when(
+            (F.col("municipality_id_start").isNotNull())
+            & (F.col("municipality_id_end").isNotNull())
+            & (F.col("municipality_id_start") != F.col("municipality_id_end")),
+            F.concat_ws(
+                " - ",
+                F.array_sort(
+                    F.array(
+                        F.col("municipality_name_start"),
+                        F.col("municipality_name_end"),
+                    )
                 ),
             ),
-        )
+        ),
     )
 
     return df
@@ -363,13 +353,23 @@ def merge_datasets(
             on=(
                 (df_maru_voyages.vessel_id == df_vessel_in.vessel_id)
                 & (F.to_date(df_maru_voyages.date_time_utc) >= df_vessel_in.start_date)
-                & (F.to_date(df_maru_voyages.date_time_utc) <= df_vessel_in.end_date)
+                & (F.to_date(df_maru_voyages.date_time_utc) < df_vessel_in.end_date)
             ),
             how="left",
         )
         .join(
             F.broadcast(df_vessel_combined_in),
-            on=(df_vessel_combined_in.csid == df_maru_voyages.vessel_id),
+            on=(
+                (df_vessel_combined_in.vessel_id == df_maru_voyages.vessel_id)
+                & (df_maru_voyages.date_time_utc >= df_vessel_combined_in["__START_AT"])
+                & (
+                    df_vessel_combined_in["__END_AT"].isNull()
+                    | (
+                        df_maru_voyages.date_time_utc
+                        < df_vessel_combined_in["__END_AT"]
+                    )
+                )
+            ),
             how="left",
         )
         .join(
@@ -440,23 +440,18 @@ def set_svalbard_as_county(df: DataFrame) -> DataFrame:
         ).otherwise(F.col("county_name")),
     )
 
-    df = df.withColumn(
-        "county_id",
-        F.when(F.col("county_name") == "Svalbard", "-99").otherwise(F.col("county_id")),
-    )
-
-    df = df.withColumn(
-        "municipality_name",
-        F.when(F.col("county_name") == "Svalbard", "Svalbard").otherwise(
-            F.col("municipality_name")
-        ),
-    )
-
-    df = df.withColumn(
-        "municipality_id",
-        F.when(F.col("county_name") == "Svalbard", "-9999").otherwise(
-            F.col("municipality_id")
-        ),
+    df = df.withColumns(
+        {
+            "county_id": F.when(F.col("county_name") == "Svalbard", "-99").otherwise(
+                F.col("county_id")
+            ),
+            "municipality_name": F.when(
+                F.col("county_name") == "Svalbard", "Svalbard"
+            ).otherwise(F.col("municipality_name")),
+            "municipality_id": F.when(
+                F.col("county_name") == "Svalbard", "-9999"
+            ).otherwise(F.col("municipality_id")),
+        }
     )
 
     return df
@@ -515,6 +510,7 @@ def generate_aggregated_report(df: DataFrame) -> DataFrame:
         "gt",
         F.col("vessel_type_maru").alias("vessel_type"),
         "usage_percentage_vessel_port_electric",
+        "usage_percentage_vessel_type_port_electric",
         "degree_of_electrification",
         "main_engine_fueltype",
         "sail_id",
@@ -568,15 +564,19 @@ def generate_aggregated_report(df: DataFrame) -> DataFrame:
     return df
 
 
-def get_processed_dates(table_name: str, max_year_month_df: DataFrame) -> DataFrame:
+def get_processed_dates(
+    table_name: str, max_year_month: str, job_stats_column: str
+) -> DataFrame:
     """Get processed MarU raw dates from ais job stats newer than the max year month.
 
     Parameters
     ----------
     table_name : str
         The name of the table to query.
-    max_year_month_df : DataFrame
-        A DataFrame containing the maximum year_month.
+    job_stats_column : str
+        Job stats column written by maru.py for this version, e.g. maru_1_10.
+    max_year_month_df : str
+        A string containing the maximum year_month.
 
     Returns:
     -------
@@ -586,14 +586,10 @@ def get_processed_dates(table_name: str, max_year_month_df: DataFrame) -> DataFr
     """
     return (
         spark.table(table_name)
-        .where(F.col("maru").isNotNull())
-        .join(
-            max_year_month_df,
-            on=(F.date_format(F.col("date_utc"), "yyyy-MM") > F.col("max_year_month")),
-            how="inner",
-        )
+        .where(F.col(job_stats_column).isNotNull())
+        .where(F.date_format(F.col("date_utc"), "yyyy-MM") > F.lit(max_year_month))
         .select(
-            "date_utc",
+            F.col("date_utc"),
             F.month("date_utc").alias("month"),
             F.year("date_utc").alias("year"),
         )

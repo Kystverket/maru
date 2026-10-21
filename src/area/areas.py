@@ -38,6 +38,20 @@ def get_areas() -> list:
             "window_orderby_key": "emission_control_area_id",
         },
         {
+            "area_name": "nox_emission_control_area",
+            "table_name": "nox_eca_v1",
+            "hex_resolution": H3_RESOLUTION_EMISSION_CONTROL_AREA,
+            "select_expression": [
+                "fid as id",
+                "start_date",
+                f"hex_{H3_RESOLUTION_EMISSION_CONTROL_AREA}",
+            ],
+            "k_ring": False,
+            "window_id": ["mmsi", "date_time_utc"],
+            "window_orderby_key": "nox_emission_control_area_id",
+            "effective_from_column": "start_date",
+        },
+        {
             "area_name": "management_plan_marine_areas",
             "hex_resolution": H3_RESOLUTION_MANAGEMENT_PLAN_MARINE_AREAS,
             "select_expression": [
@@ -146,6 +160,12 @@ def set_area_distance(df: DataFrame, close_to_power_cell: int) -> DataFrame:
             when(col("emission_control_area_id").isNotNull(), True).otherwise(False),
         )
         .withColumn(
+            "in_nox_emission_control_area",
+            when(col("nox_emission_control_area_id").isNotNull(), True).otherwise(
+                False
+            ),
+        )
+        .withColumn(
             "in_management_planning_area",
             when(
                 col("management_plan_marine_areas_area_id").isNotNull(), True
@@ -170,6 +190,7 @@ def join_ais_area(
     window_orderby_key: str,
     h3_resolution: int,
     k_rings: int,
+    effective_from_column: str | None = None,
 ) -> DataFrame:
     """Join AIS data with area data based on H3 hexagonal grid coordinates and optional k-rings.
 
@@ -203,7 +224,18 @@ def join_ais_area(
         enriched with area information.
 
     """
-    window_spec = Window.partitionBy(window_id).orderBy(window_orderby_key)
+    window_orderby = [window_orderby_key]
+    if effective_from_column:
+        effective_from_column = f"{name}_{effective_from_column}"
+        # H3 hexes on a shared border belong to both areas. Keep the area that
+        # took effect first, so border hexes between the North Sea (2021) and
+        # the Norwegian Sea (2026) keep North Sea Tier III rules.
+        window_orderby = [
+            col(effective_from_column).asc_nulls_last(),
+            col(window_orderby_key),
+        ]
+
+    window_spec = Window.partitionBy(window_id).orderBy(*window_orderby)
 
     # Set join key based on conditions
 
@@ -212,6 +244,12 @@ def join_ais_area(
         h3_join_column = f"{name}_hex_kring_{h3_resolution}_{k_rings}"
         join_key = (ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]) & (
             ais_df["date_time_utc"] >= area_df["shore_power_date_established"]
+        )
+    elif effective_from_column:
+        # Join with H3 and start date so an area only matches once it is in force
+        h3_join_column = f"{name}_hex_{h3_resolution}"
+        join_key = (ais_df[f"hex_{h3_resolution}"] == area_df[h3_join_column]) & (
+            ais_df["date_time_utc"] >= area_df[effective_from_column]
         )
     elif k_rings:
         # Join with H3 k-ring if exist
