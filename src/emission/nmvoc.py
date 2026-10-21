@@ -21,8 +21,24 @@ def set_nmvoc_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
     """
     df = df.withColumn(
         "nmvoc_main_engine_factor",
-        # SSD:
+        # Some source records use fuel labels as engine type (e.g. "Methanol").
+        # For reciprocating methanol engines, derive class from RPM to select the proper NMVOC factor.
         when(
+            (df["main_engine_enginetype"] == "Methanol")
+            & (df["main_engine_fueltype"] == "Methanol"),
+            when(
+                (df["main_engine_rpm"] > 0) & (df["main_engine_rpm"] <= 300),
+                var["nmvoc_main_engine_ssd_methanol"],
+            )
+            .when(
+                (df["main_engine_rpm"] > 300) & (df["main_engine_rpm"] <= 900),
+                var["nmvoc_main_engine_msd_methanol"],
+            )
+            .when(df["main_engine_rpm"] > 900, None)
+            .otherwise(var["nmvoc_main_engine_ssd_methanol"]),
+        )
+        # SSD:
+        .when(
             (df["main_engine_enginetype"] == "SSD")
             & (df["main_engine_fueltype"] == "Methanol"),
             var["nmvoc_main_engine_ssd_methanol"],

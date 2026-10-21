@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import when
+from pyspark.sql.functions import greatest, lit, when
 
 
 def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataFrame:
@@ -56,10 +56,11 @@ def set_pm_factor(df: DataFrame, var: dict, engines: list, areas: list) -> DataF
                     df["main_engine_fueltype"] == "Distillate Fuel",
                     equation_distillate_fuel,
                 )
-                # Methanol (The PM10 emission factor for methanol is considered to be 10% of the SSD and MSD engines PM10 emission factor when consuming HFO):
+                # Methanol (The PM10 emission factor for methanol is considered to be 10% of the SSD and MSD engines PM10 emission factor when consuming HFO).
+                # Clamped at 0: with methanol's SFC (350-370 g/kWh) and 0 sulphur in an ECA the equation goes negative.
                 .when(
                     df["main_engine_fueltype"] == "Methanol",
-                    equation_residual_fuel * 0.1,
+                    greatest(equation_residual_fuel * 0.1, lit(0.0)),
                 )
                 # LNG:
                 .when(

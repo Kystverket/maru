@@ -2,13 +2,12 @@
 import os
 import sys
 
-sys.path.append(os.path.abspath(".."))
+sys.path.append(os.path.abspath("../../"))
 
 # COMMAND ----------
 
-from datetime import datetime
-
-import pytz
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 # pylint: disable=no-name-in-module
 from area.areas import get_areas, join_ais_area, set_area_distance
@@ -30,18 +29,21 @@ from maru_functions import (
     set_consumption_factors,
     set_emission_factors,
 )
-from pyspark.sql.functions import broadcast, coalesce, col, current_date, lit, to_date
-from utilities.job_stats.upsert_job_stats import (
-    get_notebook_name,
-    upsert_ais_job_stats,
+from pyspark.sql import functions as F
+from utilities.job_stats.upsert_job_stats import upsert_ais_job_stats
+from utilities.tools import (
+    StopWatch,
+    assert_name_contains,
+    create_date_periods,
+    prepare_job_stats_table_and_get_start_date,
+    read_last_processed_date,
 )
-from utilities.tools import StopWatch, create_date_periods
 from utilities.transformers.common import add_processing_timestamp
 from utilities.transformers.h3 import CLOSE_TO_POWER_CELL
 from utilities.transformers.silver import (
     select_expression_from_table_and_prefix_columns,
 )
-from utils.config import DATE_VARIABLES, VERSION
+from utils.config import DATE_VARIABLES, MARTRAF_TABLE_VERSION, VERSION
 from utils.read_data import (
     create_variables_dictionary,
     read_ais_voyages,
@@ -52,11 +54,21 @@ from utils.select_columns import select_maru_output_columns, select_vessel_colum
 
 # COMMAND ----------
 
-norway_timezone = pytz.timezone("Europe/Oslo")
-notebook_name = get_notebook_name()
+NORWAY_TIMEZONE = ZoneInfo("Europe/Oslo")
 
-PROCESS_ALL_DATA = dbutils.widgets.get("process_all_data")
+PROCESS_ALL_DATA = dbutils.widgets.get("process_all_data").lower() == "true"
+RUN_AS_TEST_FROM_MARTRAF_TEST_DATA = dbutils.widgets.get(
+    "run_as_test_from_martraf_test_data"
+)
+RUN_AS_TEST_FROM_MARTRAF_DATA = dbutils.widgets.get("run_as_test_from_martraf_data")
 DEFAULT_START_DATE = dbutils.widgets.get("default_start_date")
+
+# Period processed in test mode (run_as_test_from_martraf_*). Pass other dates
+# as notebook parameters to test a specific window, e.g. a NOx area start date.
+dbutils.widgets.text("test_start_date", "2024-01-01")
+dbutils.widgets.text("test_end_date", "2024-03-31")
+TEST_START_DATE = dbutils.widgets.get("test_start_date")
+TEST_END_DATE = dbutils.widgets.get("test_end_date")
 
 # COMMAND ----------
 
@@ -64,17 +76,24 @@ DEFAULT_START_DATE = dbutils.widgets.get("default_start_date")
 
 # COMMAND ----------
 
-ENV: str = os.getenv("ENVIRONMENT")
+dbutils.widgets.text("ENVIRONMENT", "dev")
+ENV: str = dbutils.widgets.get("ENVIRONMENT")
+os.environ["ENVIRONMENT"] = ENV
+spark.conf.set("spark.sql.ansi.enabled", "false")
 
-SOURCE_TABLE_NAME_AIS = f"gold_{ENV}.martraf.voyages"
-SOURCE_TABLE_NAME_VARIABLES = f"gold_{ENV}.maru.emission_variables"
-SOURCE_TABLE_NAME_VESSEL = f"gold_{ENV}.maru.dim_vessel_historical"
-SOURCE_TABLE_NAME_VESSEL_PORT_ELECTRIC = f"gold_{ENV}.maru.vessel_port_electric"
-SOURCE_TABLE_NAME_VESSEL_TYPE_PORT_ELECTRIC = (
-    f"gold_{ENV}.maru.vessel_type_port_electric"
+SOURCE_MARTRAF_TABLE_FULL_PATH = f"gold_prod.martraf.martraf_{MARTRAF_TABLE_VERSION}"
+SOURCE_VARIABLES_TABLE_FULL_PATH = f"gold_{ENV}.maru.emission_variables_{VERSION}"
+SOURCE_VESSEL_TABLE_FULL_PATH = f"gold_{ENV}.maru.dim_vessel_historical_{VERSION}"
+SOURCE_VESSEL_PORT_ELECTRIC_TABLE_FULL_PATH = (
+    f"gold_{ENV}.maru.vessel_port_electric_{VERSION}"
 )
 
-TARGET_TABLE_NAME_MARU = f"gold_{ENV}.maru.fact_emission"
+SOURCE_VESSEL_TYPE_PORT_ELECTRIC_TABLE_FULL_PATH = (
+    f"gold_{ENV}.maru.vessel_type_port_electric_{VERSION}"
+)
+TARGET_TABLE = f"fact_emission_{VERSION}"
+TARGET_MARU_TABLE_FULL_PATH = f"gold_{ENV}.maru.{TARGET_TABLE}"
+JOB_STATS_MARU_COLUMN = f"maru_{VERSION}"
 
 AREAS = ["global", "eca"]
 ENGINES = ["main_engine", "aux", "boiler"]
@@ -85,7 +104,34 @@ AREA_TABLES = get_areas()
 
 # COMMAND ----------
 
-create_schema_and_table_if_not_exists(ENV, TARGET_TABLE_NAME_MARU)
+RUN_AS_TEST_FROM_MARTRAF_TEST_DATA = (
+    RUN_AS_TEST_FROM_MARTRAF_TEST_DATA.lower() == "true"
+)
+RUN_AS_TEST_FROM_MARTRAF_DATA = RUN_AS_TEST_FROM_MARTRAF_DATA.lower() == "true"
+
+if RUN_AS_TEST_FROM_MARTRAF_DATA and RUN_AS_TEST_FROM_MARTRAF_TEST_DATA:
+    value_error_message = "Both 'run_as_test_from_martraf_data' and 'run_as_test_from_martraf_test_data' cannot be true at the same time."
+    raise ValueError(value_error_message)
+
+
+if RUN_AS_TEST_FROM_MARTRAF_TEST_DATA:
+    SOURCE_MARTRAF_TABLE_FULL_PATH += "_test"
+
+
+if RUN_AS_TEST_FROM_MARTRAF_TEST_DATA or RUN_AS_TEST_FROM_MARTRAF_DATA:
+    print(f"Running in TEST mode for {TEST_START_DATE} to {TEST_END_DATE}.")
+    if date.fromisoformat(TEST_START_DATE) > date.fromisoformat(TEST_END_DATE):
+        value_error_message = (
+            f"test_start_date {TEST_START_DATE} is after test_end_date {TEST_END_DATE}."
+        )
+        raise ValueError(value_error_message)
+    VERSION = VERSION.replace(".", "_")
+    TARGET_MARU_TABLE_FULL_PATH += "_test"
+
+    assert_name_contains(name=TARGET_MARU_TABLE_FULL_PATH, required_substring="_test")
+    spark.sql(f"DROP TABLE IF EXISTS {TARGET_MARU_TABLE_FULL_PATH}")
+
+create_schema_and_table_if_not_exists(ENV, TARGET_MARU_TABLE_FULL_PATH)
 
 # COMMAND ----------
 
@@ -94,7 +140,9 @@ create_schema_and_table_if_not_exists(ENV, TARGET_TABLE_NAME_MARU)
 # COMMAND ----------
 
 # Read feature variable values to dataframe:
-df_variables_in = read_feature_values(DATE_VARIABLES, SOURCE_TABLE_NAME_VARIABLES)
+df_variables_in = read_feature_values(
+    spark, DATE_VARIABLES, SOURCE_VARIABLES_TABLE_FULL_PATH
+)
 
 # Create variables dictionary from dataframe:
 var = create_variables_dictionary(df_variables_in)
@@ -102,7 +150,7 @@ var = create_variables_dictionary(df_variables_in)
 # COMMAND ----------
 
 # Read vessel data
-df_vessel_in = read_vessel_data(SOURCE_TABLE_NAME_VESSEL)
+df_vessel_in = read_vessel_data(spark, SOURCE_VESSEL_TABLE_FULL_PATH)
 
 # Filter so only vessels with MarU vessel type is present
 df_vessel_filtered = df_vessel_in.where(
@@ -113,15 +161,14 @@ df_vessel_filtered = df_vessel_in.where(
 
 # Vessel port electric
 df_vessel_port_electric = spark.table(
-    SOURCE_TABLE_NAME_VESSEL_PORT_ELECTRIC
-).withColumn("end_date", coalesce(col("end_date"), current_date()).alias("end_date"))
+    SOURCE_VESSEL_PORT_ELECTRIC_TABLE_FULL_PATH
+).withColumn(
+    "end_date", F.coalesce(F.col("end_date"), F.current_date()).alias("end_date")
+)
 
 # Vessel type port electric
 df_vessel_type_port_electric = spark.table(
-    SOURCE_TABLE_NAME_VESSEL_TYPE_PORT_ELECTRIC
-).withColumn(
-    "end_date",
-    coalesce(col("end_date"), current_date()).alias("end_date"),
+    SOURCE_VESSEL_TYPE_PORT_ELECTRIC_TABLE_FULL_PATH
 )
 
 # COMMAND ----------
@@ -137,30 +184,40 @@ df_vessel = select_vessel_columns(df_vessel)
 
 # COMMAND ----------
 
-df_vessel.cache().count()
-
-
-# COMMAND ----------
-
 # MAGIC %md #Write data
 
 # COMMAND ----------
 
-periods = create_date_periods(
-    env=ENV,
-    process_all_data=PROCESS_ALL_DATA,
-    source_table="ais_global_voyages_gold",
-    destination_table="maru",
-    start_date=DEFAULT_START_DATE,
-    days_to_process=90,
-)
+if RUN_AS_TEST_FROM_MARTRAF_TEST_DATA or RUN_AS_TEST_FROM_MARTRAF_DATA:
+    periods = [[TEST_START_DATE, TEST_END_DATE]]
+else:
+    earliest_allowed_processing_date = prepare_job_stats_table_and_get_start_date(
+        env=ENV,
+        source_table=f"martraf_{MARTRAF_TABLE_VERSION}",
+        destination_table=JOB_STATS_MARU_COLUMN,
+        earliest_allowed_processing_date=DEFAULT_START_DATE,
+        process_all_data=PROCESS_ALL_DATA,
+        destination_full_path=TARGET_MARU_TABLE_FULL_PATH,
+    )
+
+    if earliest_allowed_processing_date is None:
+        print("No dates to process.")
+        dbutils.notebook.exit("No dates to process")
+
+    periods = create_date_periods(
+        earliest_allowed_processing_date=earliest_allowed_processing_date,
+        days_to_process=180,
+        last_available_date=read_last_processed_date(
+            env=ENV, source_table=f"martraf_{MARTRAF_TABLE_VERSION}"
+        ),
+    )
 
 
 for list_of_dates in periods:
     start_date = list_of_dates[0]
     end_date = list_of_dates[1]
 
-    current_time = datetime.now(norway_timezone)
+    current_time = datetime.now(NORWAY_TIMEZONE)
     current_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
 
     print(f"{current_time}: Processing ", start_date, " to ", end_date)
@@ -169,15 +226,21 @@ for list_of_dates in periods:
     stopwatch.start()
 
     # Read AIS data
-    df_ais_in = read_ais_voyages(SOURCE_TABLE_NAME_AIS, start_date, end_date)
+    df_ais_in = read_ais_voyages(
+        spark, SOURCE_MARTRAF_TABLE_FULL_PATH, start_date, end_date
+    )
 
     # Merge AIS and vessel data
     df_merged = df_ais_in.join(
-        broadcast(df_vessel),
+        F.broadcast(df_vessel),
         on=(
             (df_ais_in.vessel_id == df_vessel.vessel_id)
-            & (to_date(df_ais_in.date_time_utc) >= df_vessel.start_date)
-            & (to_date(df_ais_in.date_time_utc) <= df_vessel.end_date)
+            # end_date is the next version's start_date, so the interval is
+            # half-open. With <= a point on a version-change day matched both
+            # versions, and the area join's row_number kept one of them by the
+            # area ordering, not by the vessel version.
+            & (F.to_date(df_ais_in.date_time_utc) >= df_vessel.start_date)
+            & (F.to_date(df_ais_in.date_time_utc) < df_vessel.end_date)
         ),
         how="inner",
     ).drop(df_vessel.vessel_id)
@@ -191,10 +254,11 @@ for list_of_dates in periods:
         h3 = area.get("hex_resolution")
         h3_krings = area.get("hex_krings") if k_ring else None
         filter_expr = area.get("filter_sql_expression")
+        effective_from_column = area.get("effective_from_column")
 
         # Read area data:
         df_area = select_expression_from_table_and_prefix_columns(
-            table_name=f"gold_{ENV}.area.{table}",
+            table_name=f"gold_prod.area.{table}",
             select_expr=area.get("select_expression"),
             column_prefix=area_name,
         )
@@ -211,6 +275,7 @@ for list_of_dates in periods:
             window_orderby_key=area.get("window_orderby_key"),
             h3_resolution=h3,
             k_rings=h3_krings,
+            effective_from_column=effective_from_column,
         )
 
     # Set area distance
@@ -246,24 +311,36 @@ for list_of_dates in periods:
     df_processingtime = add_processing_timestamp(df_co2e)
 
     # Add version number and select columns
-    df_version = df_processingtime.withColumn("version", lit(VERSION))
+    df_version = df_processingtime.withColumn("version", F.lit(VERSION))
     df_selected = select_maru_output_columns(df_version)
 
     # Write table
-    df_selected.write.mode("append").saveAsTable(TARGET_TABLE_NAME_MARU)
+    df_selected.write.mode("append").saveAsTable(TARGET_MARU_TABLE_FULL_PATH)
 
     print("Successfully wrote data until ", end_date)
     stopwatch.stop()
 
     # Write AIS job statistics:
-    df_dates_written = df_selected.select(
-        to_date("date_time_utc").alias("date_utc"), "bi_processing_time"
-    ).dropDuplicates(subset=["date_utc"])
 
-    upsert_ais_job_stats(
-        dataframe_updates=df_dates_written,
-        target_col_notebook=notebook_name,
-        updates_col_timestamp="bi_processing_time",
+    df_dates_written = (
+        spark.table(TARGET_MARU_TABLE_FULL_PATH)
+        .where(F.to_date(F.col("date_time_utc")).between(start_date, end_date))
+        .select(F.to_date("date_time_utc").alias("date_utc"), "bi_processing_time")
+        .dropDuplicates(subset=["date_utc"])
     )
 
+    if not (RUN_AS_TEST_FROM_MARTRAF_TEST_DATA or RUN_AS_TEST_FROM_MARTRAF_DATA):
+        upsert_ais_job_stats(
+            dataframe_updates=df_dates_written,
+            target_column=JOB_STATS_MARU_COLUMN,
+            updates_col_timestamp="bi_processing_time",
+        )
+
 print("Finished.")
+
+# COMMAND ----------
+
+spark.sql(f"OPTIMIZE {TARGET_MARU_TABLE_FULL_PATH}")
+spark.sql(f"OPTIMIZE gold_{ENV}.ais.ais_job_stats")
+spark.sql(f"OPTIMIZE gold_{ENV}.maru.dim_vessel_current_{VERSION}")
+spark.sql(f"OPTIMIZE gold_{ENV}.maru.dim_vessel_historical_{VERSION}")

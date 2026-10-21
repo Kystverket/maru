@@ -1,5 +1,9 @@
 # Databricks notebook source
 import os
+import sys
+
+sys.path.append(os.path.abspath(".."))
+from utils.config import VERSION
 
 # COMMAND ----------
 
@@ -8,13 +12,15 @@ print(version)
 
 # COMMAND ----------
 
-ENV: str = os.getenv("ENVIRONMENT")
+dbutils.widgets.text("ENVIRONMENT", "dev")
+ENV: str = dbutils.widgets.get("ENVIRONMENT")
+os.environ["ENVIRONMENT"] = ENV
 
 # COMMAND ----------
 
 spark.sql(
     f"""
-          DELETE FROM gold_{ENV}.maru.fact_emission
+          DELETE FROM gold_{ENV}.maru.fact_emission_{VERSION}
           WHERE version = "{version}"
           """
 ).show()
@@ -23,7 +29,7 @@ spark.sql(
 
 spark.sql(
     f"""
-          DELETE FROM gold_{ENV}.maru.dm_maru_report
+          DELETE FROM gold_{ENV}.maru.dm_maru_report_{VERSION}
           WHERE version = "{version}"
           """
 ).show()

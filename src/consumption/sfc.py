@@ -26,8 +26,26 @@ def set_sfc_main_engine_baseline(df: DataFrame, var: dict) -> DataFrame:
     """
     df = df.withColumn(
         "sfc_main_engine_baseline",
-        # Slow speed diesel (SSD):
+        # Some source records use fuel labels as engine type (e.g. "Methanol").
+        # For reciprocating methanol engines, derive class from RPM to select the proper SFC curve.
         when(
+            df["main_engine_enginetype"] == "Methanol",
+            when(
+                df["main_engine_fueltype"] == "Methanol",
+                when(
+                    (df["main_engine_rpm"] > 0) & (df["main_engine_rpm"] <= 300),
+                    var["sfc_main_engine_methanol_ssd"],
+                )
+                .when(
+                    (df["main_engine_rpm"] > 300) & (df["main_engine_rpm"] <= 900),
+                    var["sfc_main_engine_methanol_msd"],
+                )
+                .when(df["main_engine_rpm"] > 900, None)
+                .otherwise(var["sfc_main_engine_methanol_ssd"]),
+            ),
+        )
+        # Slow speed diesel (SSD):
+        .when(
             df["main_engine_enginetype"] == "SSD",
             when(
                 df["main_engine_fueltype"] == "Distillate Fuel",  # MDO
@@ -376,10 +394,9 @@ def calculate_sfc_load(df: DataFrame) -> DataFrame:
         New DataFrame with additional columns named `sfc_main_engine`, `sfc_aux`, and `sfc_boiler`.
 
     """
-    df = (
-        df.withColumn(
-            "sfc_main_engine",
-            when(
+    df = df.withColumns(
+        {
+            "sfc_main_engine": when(
                 df["main_engine_enginetype"].isin("GT", "ST"),
                 df["sfc_main_engine_baseline"],
             ).otherwise(
@@ -393,9 +410,9 @@ def calculate_sfc_load(df: DataFrame) -> DataFrame:
                 )
                 + df["sfc_pilot_fuel"]
             ),
-        )
-        .withColumn("sfc_aux", df["sfc_aux_baseline"])
-        .withColumn("sfc_boiler", df["sfc_boiler_baseline"])
+            "sfc_aux": df["sfc_aux_baseline"],
+            "sfc_boiler": df["sfc_boiler_baseline"],
+        }
     )
 
     return df

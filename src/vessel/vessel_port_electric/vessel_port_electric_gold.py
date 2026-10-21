@@ -2,27 +2,32 @@
 import os
 import sys
 
+import pyspark.sql.functions as F
+
 # COMMAND ----------
 
-sys.path.append(os.path.abspath("../../"))
-sys.path.append(os.path.abspath("../../../"))
+sys.path.append(os.path.abspath("../../../../"))  # notebooks/
+sys.path.append(os.path.abspath("../../"))  # maru_v1_10/
 
 # COMMAND ----------
 
 from utilities.transformers.common import add_processing_timestamp
-from utils.config import MUNICIPALITY_CURRENT_YEAR
+from utils.config import MUNICIPALITY_CURRENT_YEAR, VERSION
 
 # COMMAND ----------
 
-ENV: str = os.getenv("ENVIRONMENT")
+dbutils.widgets.text("ENVIRONMENT", "dev")
+ENV: str = dbutils.widgets.get("ENVIRONMENT")
+os.environ["ENVIRONMENT"] = ENV
+spark.conf.set("spark.sql.ansi.enabled", "false")
 
-TABLE_NAME_DATAVERSE = f"silver_{ENV}.dataverse.cr944_maru_hovedtabells"
-TABLE_NAME_VESSEL_COMBINED_IMPUTATED_IMO_MMSI = (
-    f"gold_{ENV}.shipdata.combined_exploded_imputation"
+SOURCE_DATAVERSE_TABLE_FULL_PATH = f"silver_{ENV}.dataverse.cr944_maru_hovedtabells_v1"
+SOURCE_VESSEL_COMBINED_IMPUTATED_IMO_MMSI_TABLE_FULL_PATH = (
+    "gold_prod.ais.qsr_shipdata_combined_scd2_v3"
 )
-TABLE_NAME_MUNICIPALITY = f"gold_{ENV}.area.municipality_historical"
+SOURCE_MUNICIPALITY_TABLE_FULL_PATH = "gold_prod.area.municipality_historical"
 
-TABLE_NAME_DESTINATION = f"gold_{ENV}.maru.vessel_port_electric"
+TARGET_TABLE_FULL_PATH = f"gold_{ENV}.maru.vessel_port_electric_{VERSION}"
 
 # COMMAND ----------
 
@@ -31,10 +36,10 @@ TABLE_NAME_DESTINATION = f"gold_{ENV}.maru.vessel_port_electric"
 # COMMAND ----------
 
 spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {TABLE_NAME_DESTINATION} (
-    vessel_id INT COMMENT 'Unique identifier for the vessel',
-    mmsi BIGINT COMMENT 'Maritime Mobile Service Identity number',
-    imo BIGINT COMMENT 'International Maritime Organization number',
+CREATE TABLE IF NOT EXISTS {TARGET_TABLE_FULL_PATH} (
+    vessel_id BIGINT COMMENT 'Identifier for the vessel (hash of mmsi, imo and call sign)',
+    mmsi INT COMMENT 'Maritime Mobile Service Identity number',
+    imo INT COMMENT 'International Maritime Organization number',
     municipality_no STRING COMMENT 'Municipality number',
     municipality_name STRING COMMENT 'Name of the municipality',
     usage_percentage DOUBLE COMMENT 'Percentage of shore power usage',
@@ -51,20 +56,28 @@ COMMENT 'Table containing vessel port electric usage data';
 
 # COMMAND ----------
 
-df_shipdata_combined_imo_mmsi = spark.table(
-    TABLE_NAME_VESSEL_COMBINED_IMPUTATED_IMO_MMSI
+df_shipdata_combined_imo_mmsi = (
+    spark.table(SOURCE_VESSEL_COMBINED_IMPUTATED_IMO_MMSI_TABLE_FULL_PATH)
+    .withColumn(
+        "imo",
+        F.coalesce(
+            F.when(F.col("imo_ais") != 0, F.col("imo_ais")),
+            F.col("imo_spglobal"),
+        ),
+    )
+    .drop("imo_ais", "imo_spglobal")
 )
 
-df_municipality_current = spark.table(TABLE_NAME_MUNICIPALITY).where(
+df_municipality_current = spark.table(SOURCE_MUNICIPALITY_TABLE_FULL_PATH).where(
     f"year = {MUNICIPALITY_CURRENT_YEAR}"
 )
 
 df_vessel_port_electric_in = (
-    spark.table(TABLE_NAME_DATAVERSE)
+    spark.table(SOURCE_DATAVERSE_TABLE_FULL_PATH)
     .where("cr944_datasource = 'vessel_port_electric'")
     .selectExpr(
-        "cr944_mmsi as mmsi",
-        "cr944_imo as imo",
+        "cast(cr944_mmsi as int) as mmsi",
+        "cast(cr944_imo as int) as imo",
         "cr944_startdate as start_date",
         "cr944_enddate as end_date",
         "cr944_usagepercentage as usage_percentage",
@@ -79,14 +92,19 @@ df_vessel_port_electric_in = (
 
 # COMMAND ----------
 
-# Add vessel_id and municipality_no
-df_vessel_port_electric_vessel_id = (
+# Add vessel_id_hash and municipality_no
+df_vessel_port_electric_vessel_hash = (
     df_vessel_port_electric_in.join(
-        df_shipdata_combined_imo_mmsi, on=["imo", "mmsi"], how="inner"
+        df_shipdata_combined_imo_mmsi,
+        on=(
+            (df_shipdata_combined_imo_mmsi.imo == df_vessel_port_electric_in.imo)
+            & (df_shipdata_combined_imo_mmsi.mmsi == df_vessel_port_electric_in.mmsi)
+        ),
+        how="inner",
     )
     .join(df_municipality_current, "municipality_name", "inner")
     .select(
-        df_shipdata_combined_imo_mmsi["vessel_id"],
+        df_shipdata_combined_imo_mmsi["vessel_id_hash"].alias("vessel_id"),
         df_vessel_port_electric_in["mmsi"],
         df_vessel_port_electric_in["imo"],
         df_municipality_current["municipality_no"],
@@ -100,7 +118,9 @@ df_vessel_port_electric_vessel_id = (
 )
 
 # Add metadata
-df_processing_time = add_processing_timestamp(df_vessel_port_electric_vessel_id)
+df_vessel_port_electric_vessel_hash = add_processing_timestamp(
+    df_vessel_port_electric_vessel_hash
+)
 
 # COMMAND ----------
 
@@ -108,6 +128,6 @@ df_processing_time = add_processing_timestamp(df_vessel_port_electric_vessel_id)
 
 # COMMAND ----------
 
-df_processing_time.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(
-    TABLE_NAME_DESTINATION
-)
+df_vessel_port_electric_vessel_hash.write.mode("overwrite").option(
+    "mergeSchema", "true"
+).saveAsTable(TARGET_TABLE_FULL_PATH)

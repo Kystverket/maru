@@ -1,9 +1,14 @@
 # Databricks notebook source
 import os
+import sys
+
+sys.path.append(os.path.abspath(".."))
 
 # COMMAND ----------
 
-ENV: str = os.getenv("ENVIRONMENT")
+dbutils.widgets.text("ENVIRONMENT", "dev")
+ENV: str = dbutils.widgets.get("ENVIRONMENT")
+os.environ["ENVIRONMENT"] = ENV
 
 # COMMAND ----------
 

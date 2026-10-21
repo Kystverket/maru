@@ -1,4 +1,4 @@
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, Window
 from pyspark.sql import functions as F
 from pyspark.sql.functions import broadcast, to_date, when
 from pyspark.sql.functions import round as F_round
@@ -53,6 +53,8 @@ def join_ais_vessel_port_electric(
                     to_date(df_ais.date_time_utc)
                     <= df_vessel_type_port_electric.end_date
                 )
+                & (df_vessel_type_port_electric.low_lim <= df_ais.gt)
+                & (df_vessel_type_port_electric.high_lim >= df_ais.gt)
             ),
             how="left",
         )
@@ -74,7 +76,7 @@ def set_electric_shore_power_at_berth(df: DataFrame) -> DataFrame:
 
     This function evaluates certain conditions to determine if electric shore power
     can be used while a ship is at berth. The conditions include being close to power,
-    being in a specific phase, and having a sail time remaining of more than 2 hours.
+    being in a specific phase, and having a total sail duration of at least 2 hours.
     A new column `shore_power_is_connected` is added to the DataFrame indicating
     the availability of electric shore power (True or False).
     Additionally, it calculates a reduction factor based on whether electric shore power
@@ -95,6 +97,8 @@ def set_electric_shore_power_at_berth(df: DataFrame) -> DataFrame:
         The original DataFrame with an added boolean column `shore_power_is_connected`.
 
     """
+    sail_id_window = Window.partitionBy("sail_id")
+
     df = df.withColumn(
         "shore_power_is_connected",
         when(
@@ -109,7 +113,7 @@ def set_electric_shore_power_at_berth(df: DataFrame) -> DataFrame:
         .when(
             (F.col("close_to_power"))
             & (F.col("phase") == "n")
-            & (F.col("sail_time_remaining_seconds") > 3600 * 2),
+            & (F.max("sail_time_remaining_seconds").over(sail_id_window) >= 3600 * 2),
             True,
         )
         .otherwise(False),

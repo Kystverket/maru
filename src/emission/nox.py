@@ -1,5 +1,7 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import lit, when
+from pyspark.sql.functions import col, least, lit, when, year
+
+LARGE_PASSENGER_GT_THRESHOLD = 10_000
 
 
 def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
@@ -21,8 +23,7 @@ def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
         A new dataframe with the additional column "nox_main_engine_factor".
 
     """
-    df = df.withColumn(
-        "nox_main_engine_factor_global",
+    default_nox_main_engine_factor_global = (
         # Gas turbine (GT):
         when(
             (df["main_engine_enginetype"] == "GT")
@@ -128,14 +129,29 @@ def set_nox_main_engine_factor(df: DataFrame, var: dict) -> DataFrame:
             .when(
                 df["main_engine_enginetype"] == "HSD", var["nox_main_engine_tier_2_hsd"]
             ),
-        ),
+        )
+    )
+
+    if "engine_nox_rating" in df.columns:
+        default_nox_main_engine_factor_global = when(
+            (df["engine_nox_rating"] > 0) & (df["engine_nox_rating"] < 60),
+            df["engine_nox_rating"],
+        ).otherwise(default_nox_main_engine_factor_global)
+
+    df = df.withColumn(
+        "nox_main_engine_factor_global",
+        default_nox_main_engine_factor_global,
     )
 
     return df
 
 
 def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
-    """Set `NOx` (Nitrogen Oxides) factor in gram based on fuel type, rpm, and year for ECA (Emission Control Areas).
+    """Set `NOx` factors for rows inside the NOx emission control area.
+
+    This runs on the vessel table, before the join with AIS positions, so it
+    cannot see which NOx area a position is in. Whether Tier III applies in a
+    given area is decided per position in `calculate_nox`.
 
     Parameters
     ----------
@@ -153,8 +169,7 @@ def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
         A new dataframe with the additional column "nox_main_engine_eca_factor".
 
     """
-    df = df.withColumn(
-        "nox_main_engine_factor_eca",
+    default_nox_main_engine_factor_eca = (
         # Tier group 3:
         when(
             df["tier_group_nox"] == 3,
@@ -188,7 +203,12 @@ def set_nox_main_engine_eca_factor(df: DataFrame, var: dict) -> DataFrame:
                 df["main_engine_enginetype"] == "HSD", var["nox_main_engine_tier_3_hsd"]
             )
             .otherwise(df["nox_main_engine_factor_global"]),
-        ).otherwise(df["nox_main_engine_factor_global"]),
+        ).otherwise(df["nox_main_engine_factor_global"])
+    )
+
+    df = df.withColumn(
+        "nox_main_engine_factor_eca",
+        default_nox_main_engine_factor_eca,
     )
 
     return df
@@ -237,6 +257,37 @@ def set_nox_aux_boiler_factor(df: DataFrame, var: dict, engines: list) -> DataFr
             ).otherwise(df[f"nox_{engine}_factor_global"]),
         )
 
+        # Override: For large passenger vessels (Cruise and Passasjer with
+        # GT > 10 000), use the lower of the tier-differentiated main engine
+        # NOx factor and the default aux factor. This reduces NOx for
+        # Tier II/III vessels (where main engine factor < 11.2 g/kWh due to
+        # SCR or equivalent abatement) while keeping Tier 0/I unchanged
+        # (where the main engine factor > 11.2 g/kWh).
+        if engine == "aux":
+            is_large_passenger = df["vessel_type_maru"].isin("Cruise", "Passasjer") & (
+                df["gt"] > LARGE_PASSENGER_GT_THRESHOLD
+            )
+            df = df.withColumn(
+                f"nox_{engine}_factor_global",
+                when(
+                    is_large_passenger,
+                    least(
+                        df["nox_main_engine_factor_global"],
+                        df[f"nox_{engine}_factor_global"],
+                    ),
+                ).otherwise(df[f"nox_{engine}_factor_global"]),
+            )
+            df = df.withColumn(
+                f"nox_{engine}_factor_eca",
+                when(
+                    is_large_passenger,
+                    least(
+                        df["nox_main_engine_factor_eca"],
+                        df[f"nox_{engine}_factor_eca"],
+                    ),
+                ).otherwise(df[f"nox_{engine}_factor_eca"]),
+            )
+
     return df
 
 
@@ -259,6 +310,16 @@ def calculate_nox(df: DataFrame, engines: list) -> DataFrame:
         for each engine category and boiler.
 
     """
+    # Tier III applies in a NOx area only to ships built in or after the year
+    # the area took effect: 2021 for the North Sea and Baltic, 2026 for the
+    # Norwegian Sea and Canadian Arctic (MARPOL Annex VI reg. 13). Older tier
+    # group 3 ships use the global (Tier II) factors there. For other tier
+    # groups the ECA and global NOx factors are equal.
+    built_before_area_start = (col("tier_group_nox") == 3) & (
+        col("year_of_build") < year(col("nox_emission_control_area_start_date"))
+    )
+    use_eca_factor = col("in_nox_emission_control_area") & ~built_before_area_start
+
     for engine in engines:
         nox_calculation = (
             df[f"{engine}_kwh"]
@@ -270,7 +331,7 @@ def calculate_nox(df: DataFrame, engines: list) -> DataFrame:
         df = df.withColumn(
             f"nox_{engine}_tonnes",
             when(
-                df["eca"],
+                use_eca_factor,
                 df[f"nox_{engine}_factor_eca"] * nox_calculation,
             ).otherwise(df[f"nox_{engine}_factor_global"] * nox_calculation),
         )
